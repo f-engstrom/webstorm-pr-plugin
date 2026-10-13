@@ -69,8 +69,8 @@ private class ThreadInlays(
     private val layout: DiffLayout,
 ) {
     private val prId = pr.details.pullRequest.pullRequestId
-    private val expanded = mutableMapOf<Int, Boolean>()
-    private val drafts = mutableMapOf<Int, String>()
+    /** Per-thread UI state (expanded, drafts, edits), kept across rebuilds. */
+    private val states = mutableMapOf<Int, ThreadUiState>()
     private var inlays: Disposable? = null
 
     /** Bumped after each rediff, for layouts that rebuild their editor content then (unified). */
@@ -107,7 +107,7 @@ private class ThreadInlays(
         val parent = Disposer.newDisposable(lifetime, "ADO PR threads")
         inlays = parent
         val reveal = PrReviewService.getInstance(project).takeReveal(prId, threads.map { it.id })
-        reveal?.let { expanded[it] = true }
+        reveal?.let { states.getOrPut(it, ::ThreadUiState).expanded = true }
         for (thread in threads) {
             val context = thread.threadContext ?: continue
             val (side, position) = when {
@@ -116,13 +116,7 @@ private class ThreadInlays(
                 else -> continue
             }
             val (editor, line) = layout.toEditor(side, position.line - 1) ?: continue
-            val panel = ThreadPanel(
-                project, pr.repo.remote, prId, thread,
-                expanded = expanded[thread.id] ?: !thread.threadStatus.isResolved,
-                onExpandedChange = { expanded[thread.id] = it },
-                draft = drafts[thread.id].orEmpty(),
-                onDraftChange = { drafts[thread.id] = it },
-            )
+            val panel = ThreadPanel(project, pr.repo.remote, prId, thread, pr.details.myId, states.getOrPut(thread.id, ::ThreadUiState))
             ThreadInlay.add(editor, line + 1, panel, parent)
             if (thread.id == reveal) {
                 editor.caretModel.moveToLogicalPosition(LogicalPosition(line, 0))

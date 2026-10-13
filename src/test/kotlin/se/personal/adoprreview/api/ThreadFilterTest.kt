@@ -50,6 +50,21 @@ class ThreadFilterTest {
     }
 
     @Test
+    fun `likes and edits are read from comments`() {
+        val comment = json.decodeFromString<CommentThread>(
+            """
+            {"id": 9, "comments": [{"id": 1, "author": {"id": "U1"}, "content": "x", "commentType": "text",
+              "publishedDate": "2026-06-03T09:14:00.12Z", "lastContentUpdatedDate": "2026-06-03T10:00:00.5Z",
+              "usersLiked": [{"id": "u2", "displayName": "Bob"}]}]}
+            """.trimIndent(),
+        ).comments.single()
+        assertTrue(comment.isBy("u1"))
+        assertTrue(comment.isLikedBy("U2"))
+        assertTrue(comment.isEdited)
+        assertTrue(!comment.copy(lastContentUpdatedDate = "2026-06-03T09:14:00.123Z").isEdited)
+    }
+
+    @Test
     fun `thread context and status are parsed`() {
         val thread = threads.first()
         assertEquals("/src/a.ts", thread.filePath)

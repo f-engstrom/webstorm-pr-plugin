@@ -24,7 +24,6 @@ import com.intellij.ui.SimpleColoredComponent
 import com.intellij.ui.SimpleTextAttributes
 import com.intellij.ui.components.panels.VerticalLayout
 import com.intellij.util.ui.JBUI
-import com.intellij.util.ui.UIUtil
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -135,7 +134,7 @@ class NewCommentPanel(
     /** In the PR's lines of [side]. */
     private val range: CommentRange,
     private val close: () -> Unit,
-) : JPanel(VerticalLayout(JBUI.scale(6))) {
+) : InlayCard(VerticalLayout(JBUI.scale(6)), InlayCard.NEW) {
 
     private val field = EditorTextField("", target.project, FileTypes.PLAIN_TEXT).apply {
         setOneLineMode(false)
@@ -152,9 +151,6 @@ class NewCommentPanel(
     private val cancelButton = JButton("Cancel")
 
     init {
-        isOpaque = true
-        background = JBColor.namedColor("EditorTabs.background", UIUtil.getPanelBackground())
-        border = JBUI.Borders.compound(RoundedLineBorder(JBColor.border(), JBUI.scale(8)), JBUI.Borders.empty(6, 10))
 
         val lines = if (range.startLine == range.endLine) "line ${range.startLine + 1}" else "lines ${range.startLine + 1}–${range.endLine + 1}"
         add(SimpleColoredComponent().apply {

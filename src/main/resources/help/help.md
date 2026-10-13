@@ -144,6 +144,8 @@ To turn checking off or on, use **Notify About PR Activity** in the tool window'
 - **Cmd+Enter** posts, **Esc** cancels.
 - Threads appear under their line, on the side they belong to. Resolved threads start collapsed; click the header to expand.
 - Each thread has a reply box and **Resolve** / **Reactivate**.
+- Every comment shows a 👍 with its like count. Click it to like or unlike; hover it to see who liked it.
+- Your own comments have **Edit** (Cmd+Enter saves, Esc cancels) and **Delete**, which asks first. Edited comments say *(edited)*.
 - If posting fails, your text is kept and also copied to the clipboard.
 - `@mentions` from ADO are shown as names. Typing `@Name` yourself posts plain text, not a real mention.
 

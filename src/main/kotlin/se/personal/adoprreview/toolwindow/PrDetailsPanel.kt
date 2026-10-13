@@ -36,6 +36,7 @@ import se.personal.adoprreview.api.dto.Vote
 import se.personal.adoprreview.diff.PrDiffContext
 import se.personal.adoprreview.diff.PrDiffOpener
 import se.personal.adoprreview.diff.ThreadPanel
+import se.personal.adoprreview.diff.ThreadUiState
 import se.personal.adoprreview.repo.ResolvedRepo
 import se.personal.adoprreview.state.LastSeen
 import se.personal.adoprreview.state.LastSeenService
@@ -72,8 +73,8 @@ class PrDetailsPanel(
     private val reviewers = JPanel(VerticalLayout(JBUI.scale(2))).apply { isOpaque = false }
     private val description = Markdown.createPane()
     private val generalThreads = JPanel(VerticalLayout(JBUI.scale(6))).apply { isOpaque = false }
-    private val generalExpanded = mutableMapOf<Int, Boolean>()
-    private val generalDrafts = mutableMapOf<Int, String>()
+    /** UI state of general threads (expanded, drafts, edits), kept across rebuilds. */
+    private val generalStates = mutableMapOf<Int, ThreadUiState>()
 
     /** PR ID to thread ID to go to once that PR's threads are loaded (from a notification's "Show"). */
     private var pendingReveal: Pair<Int, Int>? = null
@@ -179,8 +180,7 @@ class PrDetailsPanel(
         loadJob?.cancel()
         rangeJob?.cancel()
         current = null
-        generalExpanded.clear()
-        generalDrafts.clear()
+        generalStates.clear()
         updatedSinceSeen = emptySet()
         if (repo == null || pr == null) {
             showMessage("Select a pull request")
@@ -357,7 +357,7 @@ class PrDetailsPanel(
             ?.let { id -> threads?.firstOrNull { it.id == id } }
         if (reveal != null) pendingReveal = null
         if (reveal != null && revealInDiff(details, reveal)) return renderThreads(repo, details, threads, null)
-        reveal?.let { generalExpanded[it.id] = true }
+        reveal?.let { generalStates.getOrPut(it.id, ::ThreadUiState).expanded = true }
         renderThreads(repo, details, threads, reveal?.id)
     }
 
@@ -381,13 +381,10 @@ class PrDetailsPanel(
             threads == null -> generalThreads.add(hint("Loading comments…"))
             general.isEmpty() -> generalThreads.add(hint("No general comments"))
             else -> general.forEach { thread ->
-                generalThreads.add(ThreadPanel(
-                    project, repo.remote, prId, thread,
-                    expanded = generalExpanded[thread.id] ?: !thread.threadStatus.isResolved,
-                    onExpandedChange = { generalExpanded[thread.id] = it },
-                    draft = generalDrafts[thread.id].orEmpty(),
-                    onDraftChange = { generalDrafts[thread.id] = it },
-                ).also { if (thread.id == scrollTo) revealed = it })
+                generalThreads.add(
+                    ThreadPanel(project, repo.remote, prId, thread, details.myId, generalStates.getOrPut(thread.id, ::ThreadUiState))
+                        .also { if (thread.id == scrollTo) revealed = it },
+                )
             }
         }
         generalThreads.revalidate()

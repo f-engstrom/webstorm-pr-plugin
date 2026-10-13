@@ -1,7 +1,9 @@
 package se.personal.adoprreview.api.dto
 
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.Transient
 import kotlinx.serialization.json.JsonObject
+import java.time.Instant
 
 @Serializable
 data class CommentThread(
@@ -52,12 +54,33 @@ data class Comment(
     val id: Int,
     val parentCommentId: Int = 0,
     val author: IdentityRef = IdentityRef(),
+    /** Markdown, with `@<GUID>` mentions replaced by names for display (see [rawContent]). */
     val content: String? = null,
     val publishedDate: String? = null,
     val lastUpdatedDate: String? = null,
+    /** Changes only when the text was edited (unlike [lastUpdatedDate], which likes also touch). */
+    val lastContentUpdatedDate: String? = null,
     val commentType: String? = null,
     val isDeleted: Boolean = false,
-)
+    val usersLiked: List<IdentityRef> = emptyList(),
+    /** The content as stored, with real mentions; what editing starts from. Not part of the JSON. */
+    @Transient val rawContent: String? = null,
+) {
+    fun isBy(userId: String): Boolean = author.id.equals(userId, ignoreCase = true)
+
+    fun isLikedBy(userId: String): Boolean = usersLiked.any { it.id.equals(userId, ignoreCase = true) }
+
+    /** Edited after posting; a second of slack because ADO stores the two dates separately. */
+    val isEdited: Boolean
+        get() {
+            val published = publishedDate?.let { runCatching { Instant.parse(it) }.getOrNull() } ?: return false
+            val edited = lastContentUpdatedDate?.let { runCatching { Instant.parse(it) }.getOrNull() } ?: return false
+            return edited.isAfter(published.plusSeconds(1))
+        }
+}
+
+@Serializable
+data class CommentUpdate(val content: String)
 
 enum class ThreadStatus(val value: String, val label: String, val isResolved: Boolean) {
     ACTIVE("active", "Active", false),

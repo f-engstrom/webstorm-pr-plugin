@@ -9,6 +9,7 @@ import kotlinx.serialization.json.jsonPrimitive
 import se.personal.adoprreview.api.dto.ChangeEntry
 import se.personal.adoprreview.api.dto.ChangesResponse
 import se.personal.adoprreview.api.dto.CommentThread
+import se.personal.adoprreview.api.dto.CommentUpdate
 import se.personal.adoprreview.api.dto.ConnectionData
 import se.personal.adoprreview.api.dto.Identity
 import se.personal.adoprreview.api.dto.Iteration
@@ -160,6 +161,23 @@ class AdoClient {
 
     suspend fun vote(remote: AdoRemote, prId: Int, reviewerId: String, vote: Vote) {
         write("PUT", "${remote.apiUrl}/pullrequests/$prId/reviewers/$reviewerId", ReviewerVote(vote.value))
+    }
+
+    suspend fun setLiked(remote: AdoRemote, prId: Int, threadId: Int, commentId: Int, liked: Boolean) {
+        val url = withApiVersion("${remote.apiUrl}/pullrequests/$prId/threads/$threadId/comments/$commentId/likes", API_VERSION)
+        // A POST without a body gets no Content-Length header from java.net.http, which ADO rejects with 411.
+        send(url) {
+            if (liked) header("Content-Type", "application/json").POST(HttpRequest.BodyPublishers.ofString("{}")) else DELETE()
+        }
+    }
+
+    suspend fun editComment(remote: AdoRemote, prId: Int, threadId: Int, commentId: Int, content: String) {
+        write("PATCH", "${remote.apiUrl}/pullrequests/$prId/threads/$threadId/comments/$commentId", CommentUpdate(content))
+    }
+
+    suspend fun deleteComment(remote: AdoRemote, prId: Int, threadId: Int, commentId: Int) {
+        val url = withApiVersion("${remote.apiUrl}/pullrequests/$prId/threads/$threadId/comments/$commentId", API_VERSION)
+        send(url) { DELETE() }
     }
 
     suspend fun setThreadStatus(remote: AdoRemote, prId: Int, threadId: Int, status: ThreadStatus) {

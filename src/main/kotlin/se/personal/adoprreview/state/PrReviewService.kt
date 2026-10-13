@@ -13,6 +13,7 @@ import se.personal.adoprreview.api.AdoClient
 import se.personal.adoprreview.api.Mentions
 import se.personal.adoprreview.api.PrFilter
 import se.personal.adoprreview.api.dto.ChangeEntry
+import se.personal.adoprreview.api.dto.Comment
 import se.personal.adoprreview.api.dto.CommentThread
 import se.personal.adoprreview.api.dto.IdentityRef
 import se.personal.adoprreview.api.dto.Iteration
@@ -109,7 +110,7 @@ class PrReviewService(@Suppress("unused") private val project: Project, val scop
         val names = mentionNames(org, threads.flatMap { thread -> thread.comments.map { it.author } }, contents)
         return threads.map { thread ->
             thread.copy(comments = thread.comments.map { comment ->
-                comment.content?.let { comment.copy(content = Mentions.replace(it, names)) } ?: comment
+                comment.content?.let { comment.copy(content = Mentions.replace(it, names), rawContent = it) } ?: comment
             })
         }
     }
@@ -166,6 +167,21 @@ class PrReviewService(@Suppress("unused") private val project: Project, val scop
     suspend fun reply(remote: AdoRemote, prId: Int, thread: CommentThread, content: String) {
         val parent = thread.comments.minOf { it.id }
         AdoClient.getInstance().reply(remote, prId, thread.id, parent, content)
+        reloadThreads(remote, prId)
+    }
+
+    suspend fun setLiked(remote: AdoRemote, prId: Int, thread: CommentThread, comment: Comment, liked: Boolean) {
+        AdoClient.getInstance().setLiked(remote, prId, thread.id, comment.id, liked)
+        reloadThreads(remote, prId)
+    }
+
+    suspend fun editComment(remote: AdoRemote, prId: Int, thread: CommentThread, comment: Comment, content: String) {
+        AdoClient.getInstance().editComment(remote, prId, thread.id, comment.id, content)
+        reloadThreads(remote, prId)
+    }
+
+    suspend fun deleteComment(remote: AdoRemote, prId: Int, thread: CommentThread, comment: Comment) {
+        AdoClient.getInstance().deleteComment(remote, prId, thread.id, comment.id)
         reloadThreads(remote, prId)
     }
 
