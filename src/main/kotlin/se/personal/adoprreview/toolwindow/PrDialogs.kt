@@ -15,7 +15,27 @@ import com.intellij.ui.dsl.builder.panel
 import com.intellij.util.ui.JBUI
 import se.personal.adoprreview.state.PrTemplates
 import javax.swing.JComponent
+import javax.swing.text.JTextComponent
 import javax.swing.event.DocumentEvent
+
+/**
+ * Re-runs validation as [field] changes, so an error shown after pressing OK goes away once it's fixed. The platform's
+ * own re-check after a failed OK doesn't reliably clear it.
+ */
+private fun revalidateOnChange(dialog: PrDialog, field: JTextComponent) {
+    field.document.addDocumentListener(object : DocumentAdapter() {
+        override fun textChanged(e: DocumentEvent) = dialog.refreshValidation()
+    })
+}
+
+/** Exposes the protected validation plumbing of [DialogWrapper] to [revalidateOnChange]. */
+abstract class PrDialog(project: Project) : DialogWrapper(project) {
+    fun refreshValidation() {
+        val info = doValidate()
+        setErrorInfoAll(listOfNotNull(info))
+        isOKActionEnabled = info == null
+    }
+}
 
 /** Title, description and draft fields shared by both dialogs. */
 private class PrFields(initialTitle: String, initialDescription: String, initiallyDraft: Boolean) {
@@ -37,7 +57,7 @@ class CreatePrDialog(
     title: String,
     jiraSite: String?,
     draft: Boolean,
-) : DialogWrapper(project) {
+) : PrDialog(project) {
 
     private val target = ComboBox(targetBranches.toTypedArray()).apply {
         isEditable = true
@@ -50,7 +70,8 @@ class CreatePrDialog(
     private var generatedDescription = fields.description.text
 
     val targetBranch: String get() = (target.editor.item as? String ?: target.selectedItem as? String).orEmpty().trim()
-    val prTitle: String get() = fields.title.text.trim()
+    /** Falls back to the branch name when left empty. */
+    val prTitle: String get() = fields.title.text.trim().ifEmpty { sourceBranch }
     val prDescription: String get() = fields.description.text
     val isDraft: Boolean get() = fields.draft.isSelected
     val jiraSite: String get() = jiraSiteField.text.trim()
@@ -65,6 +86,9 @@ class CreatePrDialog(
                 fields.description.text = generatedDescription
             }
         })
+        fields.title.emptyText.text = sourceBranch
+        (target.editor.editorComponent as? JTextComponent)?.let { revalidateOnChange(this, it) }
+        target.addActionListener { refreshValidation() }
         init()
     }
 
@@ -84,15 +108,13 @@ class CreatePrDialog(
     override fun getPreferredFocusedComponent(): JComponent = fields.title
 
     override fun doValidate(): ValidationInfo? = when {
-        prTitle.isEmpty() -> ValidationInfo("Enter a title", fields.title)
-        PrTemplates.ticketKey(sourceBranch)?.let { prTitle == it } == true -> ValidationInfo("Add the summary after the ticket key", fields.title)
         targetBranch.isEmpty() -> ValidationInfo("Pick a target branch", target)
         targetBranch == sourceBranch -> ValidationInfo("Target must differ from the source branch", target)
         else -> null
     }
 }
 
-class EditPrDialog(project: Project, prId: Int, title: String, description: String, draft: Boolean) : DialogWrapper(project) {
+class EditPrDialog(project: Project, prId: Int, title: String, description: String, draft: Boolean) : PrDialog(project) {
 
     private val fields = PrFields(title, description, draft)
 
@@ -102,6 +124,7 @@ class EditPrDialog(project: Project, prId: Int, title: String, description: Stri
 
     init {
         this.title = "Edit Pull Request #$prId"
+        revalidateOnChange(this, fields.title)
         setOKButtonText("Save")
         init()
     }

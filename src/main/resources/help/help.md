@@ -64,7 +64,7 @@ Click **+** in the Pull Requests toolbar to create a PR from the current branch.
 
 **Defaults in the dialog:**
 
-- **Title:** the ticket key from the branch name, so `feature/ABC-123` gives `ABC-123 `. Type the summary after it. Branches without a key use the last commit message.
+- **Title:** the ticket key from the branch name, so `feature/ABC-123` gives `ABC-123 `. Type the summary after it, or leave it as it is. Branches without a key use the last commit message. An empty title falls back to the branch name.
 - **Description:** a link to the ticket, for example `[ABC-123](https://your-company.atlassian.net/browse/ABC-123)`.
 - **Jira site:** used for that link. Enter it once per Azure DevOps org; it's remembered.
 - **Target branch:** the one you used last for this repo, or else the repo's default branch.
