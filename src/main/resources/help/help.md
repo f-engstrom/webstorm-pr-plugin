@@ -123,6 +123,8 @@ To turn checking off or on, use **Notify About PR Activity** in the tool window'
 
 **Markers in the tree:**
 
+- **File names are coloured by change:** green for added, blue for modified, grey with strikethrough for deleted.
+
 - **2 open · 1 resolved**: the comment threads on that file.
 - **updated**: the file changed since your previous visit.
 - **Comment rows** under a file (author and first line, grey when resolved). Double-click one to open the diff at that comment.

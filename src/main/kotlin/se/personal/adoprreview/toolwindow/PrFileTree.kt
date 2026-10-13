@@ -10,6 +10,7 @@ import com.intellij.ui.JBColor
 import com.intellij.ui.SimpleTextAttributes
 import com.intellij.ui.treeStructure.Tree
 import com.intellij.util.ui.JBUI
+import com.intellij.util.ui.UIUtil
 import com.intellij.util.ui.tree.TreeUtil
 import se.personal.adoprreview.api.dto.ChangeEntry
 import se.personal.adoprreview.api.dto.ChangeKind
@@ -230,7 +231,10 @@ class PrFileTree(
                         ChangeKind.DELETE -> FileStatus.DELETED
                         ChangeKind.EDIT, ChangeKind.RENAME -> FileStatus.MODIFIED
                     }
-                    append(name, if (viewed) SimpleTextAttributes.GRAYED_ATTRIBUTES else SimpleTextAttributes(SimpleTextAttributes.STYLE_PLAIN, status.color))
+                    // Deleted: the IDE's grey plus strikethrough, so it reads as removed and differs from "viewed"
+                    // (grey without strikethrough). Red would clash with the IDE's colour for unversioned files.
+                    val style = if (item.kind == ChangeKind.DELETE) SimpleTextAttributes.STYLE_STRIKEOUT else SimpleTextAttributes.STYLE_PLAIN
+                    append(name, if (viewed) SimpleTextAttributes(style, UIUtil.getInactiveTextColor()) else SimpleTextAttributes(style, status.color))
                     if (fileTree?.updated?.contains(item.path) == true) {
                         append("  updated", SimpleTextAttributes(SimpleTextAttributes.STYLE_BOLD, UPDATED))
                     }

@@ -74,7 +74,8 @@ data class ChangeEntry(
     val changeType: String = "",
     val originalPath: String? = null,
 ) {
-    val path: String get() = item.path
+    /** Deleted files come with `item.path: null` and only `originalPath`. */
+    val path: String get() = item.path ?: originalPath.orEmpty()
 
     val kind: ChangeKind
         get() = when {
@@ -90,7 +91,8 @@ data class ChangeEntry(
 
 @Serializable
 data class ChangeItem(
-    val path: String = "",
+    /** Null for deleted files; see [ChangeEntry.path]. */
+    val path: String? = null,
     val objectId: String? = null,
     val originalObjectId: String? = null,
     val gitObjectType: String? = null,

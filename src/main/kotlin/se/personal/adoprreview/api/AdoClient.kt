@@ -232,6 +232,8 @@ class AdoClient {
         // encodeDefaults so values like `offset = 1` are always sent; explicitNulls = false omits unset optional fields.
         val json = Json {
             ignoreUnknownKeys = true
+            // ADO sometimes sends explicit nulls (e.g. `item.path` of deleted files); use defaults instead of failing.
+            coerceInputValues = true
             encodeDefaults = true
             explicitNulls = false
         }
