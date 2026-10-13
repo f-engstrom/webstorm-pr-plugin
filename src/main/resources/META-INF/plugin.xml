@@ -1,0 +1,34 @@
+<idea-plugin>
+    <id>se.personal.adoprreview</id>
+    <name>Azure DevOps PR Review</name>
+    <vendor>Personal</vendor>
+    <description><![CDATA[
+        Review Azure DevOps (dev.azure.com) pull requests inside WebStorm. Authenticates with the Azure CLI.
+    ]]></description>
+
+    <depends>com.intellij.modules.platform</depends>
+    <depends>Git4Idea</depends>
+
+    <extensions defaultExtensionNs="com.intellij">
+        <toolWindow id="ADO PRs" anchor="left" icon="AllIcons.Vcs.Merge"
+                    factoryClass="se.personal.adoprreview.toolwindow.PrToolWindowFactory"/>
+        <diff.DiffExtension implementation="se.personal.adoprreview.diff.PrDiffExtension"/>
+        <notificationGroup id="ADO PR Review" displayType="BALLOON"/>
+        <!-- Background activity: logged in the Notifications tool window without a popup; users can switch to Balloon. -->
+        <notificationGroup id="ADO PR Activity" displayType="NONE"/>
+        <postStartupActivity implementation="se.personal.adoprreview.state.PrWatcherStartup"/>
+    </extensions>
+
+    <actions>
+        <action id="AdoPrReview.CommentOnSelection" class="se.personal.adoprreview.actions.CommentOnSelectionAction"
+                text="Add PR Comment" description="Comment on the selected lines of this pull request diff"
+                icon="AllIcons.General.Add">
+            <add-to-group group-id="Diff.EditorPopupMenu" anchor="first"/>
+        </action>
+        <action id="AdoPrReview.AllFiles" class="se.personal.adoprreview.actions.AllFilesAction"
+                text="All Files" description="Show every changed file of this pull request in one scrolling view"
+                icon="AllIcons.Actions.ListFiles">
+            <add-to-group group-id="Diff.ViewerToolbar" anchor="last"/>
+        </action>
+    </actions>
+</idea-plugin>
