@@ -22,7 +22,8 @@ object CheckoutAction {
             override fun run(indicator: ProgressIndicator) {
                 val result = GitFetchSupport.fetchSupport(project)
                     .fetch(repo.gitRepository, remote, "+refs/heads/$branch:refs/remotes/$remoteBranch")
-                fetched = !result.showNotificationIfFailed("Couldn't fetch $remoteBranch")
+                result.showNotificationIfFailed("Couldn't fetch $remoteBranch")
+                fetched = result.isSuccessful()
             }
 
             override fun onSuccess() {

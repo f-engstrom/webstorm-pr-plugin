@@ -1,7 +1,6 @@
 package se.personal.adoprreview.toolwindow
 
 import com.intellij.openapi.project.Project
-import com.intellij.openapi.ui.ComboBox
 import com.intellij.openapi.ui.DialogWrapper
 import com.intellij.openapi.ui.ValidationInfo
 import com.intellij.ui.DocumentAdapter
@@ -53,15 +52,15 @@ class CreatePrDialog(
     project: Project,
     private val sourceBranch: String,
     targetBranches: List<String>,
+    defaultBranch: String?,
     defaultTarget: String?,
     title: String,
     jiraSite: String?,
     draft: Boolean,
 ) : PrDialog(project) {
 
-    private val target = ComboBox(targetBranches.toTypedArray()).apply {
-        isEditable = true
-        selectedItem = defaultTarget ?: targetBranches.firstOrNull()
+    private val target = BranchPicker(targetBranches, defaultBranch).apply {
+        text = defaultTarget ?: targetBranches.firstOrNull().orEmpty()
     }
     private val jiraSiteField = JBTextField(jiraSite.orEmpty())
     private val fields = PrFields(title, PrTemplates.description(sourceBranch, jiraSite), draft)
@@ -69,7 +68,7 @@ class CreatePrDialog(
     /** The description still holds the generated ticket link (not edited), so it may follow Jira site changes. */
     private var generatedDescription = fields.description.text
 
-    val targetBranch: String get() = (target.editor.item as? String ?: target.selectedItem as? String).orEmpty().trim()
+    val targetBranch: String get() = target.text.trim()
     /** Falls back to the branch name when left empty. */
     val prTitle: String get() = fields.title.text.trim().ifEmpty { sourceBranch }
     val prDescription: String get() = fields.description.text
@@ -87,14 +86,13 @@ class CreatePrDialog(
             }
         })
         fields.title.emptyText.text = sourceBranch
-        (target.editor.editorComponent as? JTextComponent)?.let { revalidateOnChange(this, it) }
-        target.addActionListener { refreshValidation() }
+        revalidateOnChange(this, target.textField)
         init()
     }
 
     override fun createCenterPanel(): JComponent = panel {
         row("From:") { label(sourceBranch) }
-        row("Into:") { cell(target).align(AlignX.FILL) }
+        row("Into:") { cell(target).align(AlignX.FILL).comment("Press ↓ or the button to pick from a grouped list; type to filter.") }
         row("Title:") { cell(fields.title).align(AlignX.FILL).focused() }
         row("Description:") {}
         row { cell(fields.descriptionScroll).align(Align.FILL) }.resizableRow()
@@ -108,8 +106,8 @@ class CreatePrDialog(
     override fun getPreferredFocusedComponent(): JComponent = fields.title
 
     override fun doValidate(): ValidationInfo? = when {
-        targetBranch.isEmpty() -> ValidationInfo("Pick a target branch", target)
-        targetBranch == sourceBranch -> ValidationInfo("Target must differ from the source branch", target)
+        targetBranch.isEmpty() -> ValidationInfo("Pick a target branch", target.textField)
+        targetBranch == sourceBranch -> ValidationInfo("Target must differ from the source branch", target.textField)
         else -> null
     }
 }

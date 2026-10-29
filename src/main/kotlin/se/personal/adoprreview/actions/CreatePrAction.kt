@@ -77,6 +77,7 @@ class CreatePrAction(private val panel: PrListPanel) :
             project,
             sourceBranch = branch,
             targetBranches = targets,
+            defaultBranch = defaultBranch,
             defaultTarget = settings.lastTarget(repoKey)?.takeIf { it in targets } ?: defaultBranch,
             title = PrTemplates.title(branch, lastCommit),
             jiraSite = settings.jiraSite(remote.org),
