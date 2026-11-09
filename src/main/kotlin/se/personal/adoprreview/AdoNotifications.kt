@@ -4,6 +4,7 @@ import com.intellij.ide.BrowserUtil
 import com.intellij.notification.NotificationAction
 import com.intellij.notification.NotificationGroupManager
 import com.intellij.notification.NotificationType
+import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.ide.CopyPasteManager
 import com.intellij.openapi.project.Project
 import se.personal.adoprreview.api.AdoException
@@ -12,6 +13,7 @@ import java.awt.datatransfer.StringSelection
 
 object AdoNotifications {
     private const val GROUP = "ADO PR Review"
+    private val LOG = Logger.getInstance(AdoNotifications::class.java)
 
     /** An info balloon; with [url], it gets "Open in Browser" and "Copy Link" actions. */
     fun info(project: Project, title: String, content: String, url: String? = null) {
@@ -27,6 +29,7 @@ object AdoNotifications {
     }
 
     fun warn(project: Project, title: String, content: String) {
+        LOG.info("Warning shown: $title: $content")
         NotificationGroupManager.getInstance().getNotificationGroup(GROUP)
             .createNotification(title, content, NotificationType.WARNING)
             .notify(project)
@@ -37,6 +40,8 @@ object AdoNotifications {
             is AzCliException, is AdoException -> error.message.orEmpty()
             else -> error.message ?: error.javaClass.simpleName
         }
+        // Warn, not error: an error-level log pops up IntelliJ's "IDE error" reporter. The stack trace lands in idea.log.
+        LOG.warn("Error shown: $title: $content", error)
         NotificationGroupManager.getInstance().getNotificationGroup(GROUP)
             .createNotification(title, content, NotificationType.ERROR)
             .notify(project)

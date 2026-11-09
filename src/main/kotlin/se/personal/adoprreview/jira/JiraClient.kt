@@ -2,6 +2,7 @@ package se.personal.adoprreview.jira
 
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.components.service
+import com.intellij.openapi.diagnostic.Logger
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
@@ -93,23 +94,29 @@ class JiraClient(private val transport: HttpTransport) {
         val siteBase = JiraAuth.normalize(site)
         apiBases[siteBase]?.let { return result(exchange(it, login, path, method, body)) }
 
+        LOG.info("Jira: first request for $siteBase as ${login.email} (token ${describe(login.token)}); looking up the cloud ID")
         val gateway = cloudId(siteBase)?.let { "$GATEWAY/$it" }
         if (gateway == null) {
+            LOG.info("Jira: no cloud ID for $siteBase, calling the site directly")
             val reply = exchange(siteBase, login, path, method, body)
             if (reply.status != 401) apiBases[siteBase] = siteBase
             return result(reply)
         }
         val reply = exchange(gateway, login, path, method, body)
         if (reply.status != 401) {
+            LOG.info("Jira: using the API gateway $gateway for $siteBase")
             apiBases[siteBase] = gateway
             return result(reply)
         }
         // A classic (unscoped) token may only work on the site itself.
+        LOG.info("Jira: the gateway rejected the token (401), retrying on the site $siteBase")
         val direct = exchange(siteBase, login, path, method, body)
         if (direct.status != 401) {
+            LOG.info("Jira: using the site $siteBase directly")
             apiBases[siteBase] = siteBase
             return result(direct)
         }
+        LOG.info("Jira: both the gateway and the site rejected the token; reporting the gateway's answer")
         return result(reply)
     }
 
@@ -117,8 +124,10 @@ class JiraClient(private val transport: HttpTransport) {
     private suspend fun cloudId(siteBase: String): String? {
         val reply = call(siteBase, HttpCall("GET", "$siteBase/_edge/tenant_info", mapOf("Accept" to "application/json"), timeout = TIMEOUT))
         if (reply.status !in 200..299) return null
-        return runCatching { json.parseToJsonElement(reply.text).jsonObject["cloudId"]?.jsonPrimitive?.content }
+        val id = runCatching { json.parseToJsonElement(reply.text).jsonObject["cloudId"]?.jsonPrimitive?.content }
             .getOrNull()?.takeIf { it.isNotBlank() }
+        LOG.info("Jira: cloud ID for $siteBase is ${id ?: "missing (body: ${snippet(reply.text)})"}")
+        return id
     }
 
     private suspend fun exchange(base: String, login: JiraAuth.Login, path: String, method: String, body: String?): HttpReply {
@@ -132,8 +141,12 @@ class JiraClient(private val transport: HttpTransport) {
     }
 
     private suspend fun call(base: String, call: HttpCall): HttpReply = try {
-        transport.send(call)
+        transport.send(call).also { reply ->
+            if (reply.status in 200..299) LOG.info("Jira: ${call.method} ${call.url} -> ${reply.status}")
+            else LOG.info("Jira: ${call.method} ${call.url} -> ${reply.status}: ${snippet(reply.text)}")
+        }
     } catch (e: IOException) {
+        LOG.info("Jira: ${call.method} ${call.url} failed", e)
         fail("Couldn't reach $base: ${e.message ?: e.javaClass.simpleName}", null)
     } catch (e: IllegalArgumentException) {
         fail("Not a valid Jira site: $base", null)
@@ -169,6 +182,14 @@ class JiraClient(private val transport: HttpTransport) {
     }
 
     companion object {
+        private val LOG = Logger.getInstance(JiraClient::class.java)
+
+        /** The token's shape for the log, never the token itself. */
+        private fun describe(token: String): String =
+            "${token.length} chars${if (token != token.trim()) ", with surrounding whitespace!" else ""}"
+
+        private fun snippet(text: String): String = text.replace(Regex("\\s+"), " ").take(500).ifBlank { "(empty body)" }
+
         private val FIELDS = listOf("summary", "issuetype", "status", "assignee")
         private const val GATEWAY = "https://api.atlassian.com/ex/jira"
         private val TIMEOUT: Duration = Duration.ofSeconds(30)
