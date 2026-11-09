@@ -1,15 +1,10 @@
 package se.personal.adoprreview.actions
 
 import com.intellij.icons.AllIcons
-import com.intellij.openapi.application.EDT
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.popup.JBPopupFactory
 import com.intellij.ui.awt.RelativePoint
 import com.intellij.ui.dsl.listCellRenderer.textListCellRenderer
-import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
-import se.personal.adoprreview.AdoNotifications
 import se.personal.adoprreview.api.dto.Vote
 import se.personal.adoprreview.repo.AdoRemote
 import se.personal.adoprreview.state.PrReviewService
@@ -51,16 +46,9 @@ class VoteAction(private val project: Project, private val onVoted: () -> Unit) 
         val prId = prId
         isEnabled = false
         val service = PrReviewService.getInstance(project)
-        service.scope.launch(Dispatchers.EDT) {
-            try {
-                service.vote(remote, prId, vote)
-                onVoted()
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                AdoNotifications.error(project, "Couldn't vote on #$prId", e)
-                isEnabled = true
-            }
+        service.launchOperation("Couldn't vote on #$prId", onFailure = { isEnabled = true }) {
+            service.vote(remote, prId, vote)
+            onVoted()
         }
     }
 }

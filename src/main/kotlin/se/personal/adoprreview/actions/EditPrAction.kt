@@ -1,11 +1,7 @@
 package se.personal.adoprreview.actions
 
-import com.intellij.openapi.application.EDT
 import com.intellij.openapi.project.Project
 import com.intellij.platform.ide.progress.withBackgroundProgress
-import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
 import se.personal.adoprreview.AdoNotifications
 import se.personal.adoprreview.api.AdoClient
 import se.personal.adoprreview.api.dto.PullRequestUpdate
@@ -40,14 +36,6 @@ object EditPrAction {
     }
 
     private fun run(project: Project, errorTitle: String, block: suspend () -> Unit) {
-        PrReviewService.getInstance(project).scope.launch(Dispatchers.EDT) {
-            try {
-                block()
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                AdoNotifications.error(project, errorTitle, e)
-            }
-        }
+        PrReviewService.getInstance(project).launchOperation(errorTitle) { block() }
     }
 }

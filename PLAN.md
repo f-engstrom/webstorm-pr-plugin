@@ -180,12 +180,12 @@ Only build these if the user asks for them after using phases 1–4:
 
 ## Testing
 
-- Unit-test remote URL parsing and system-thread filtering, and, through their interfaces with in-memory fakes, the branch → PR workflow (`workflow/PrWorkflow`) the PR conversation (`conversation/PrConversations`) and PR activity (`state/PrActivity`): push/rollback/Jira decisions, anchor mapping, fetch ordering and badge/unseen bookkeeping are where bugs hid.
+- Unit-test remote URL parsing and system-thread filtering, and, through their interfaces with in-memory fakes, the branch → PR workflow (`workflow/PrWorkflow`), the PR conversation (`conversation/PrConversations`) and PR activity (`state/PrActivity`): push/rollback/Jira decisions, anchor mapping, fetch ordering and badge/unseen bookkeeping are where bugs hid. `AdoClient` and `JiraClient` are tested against canned replies through `HttpTransport` (auth retry, paging, error messages).
 - Everything else is verified by hand against real PRs with `./gradlew runIde`.
 
 ## Conventions
 
-- Keep it small: no DI frameworks, no abstraction layers, no interfaces with a single implementation. The workflow ports (`WorkflowGit`, `WorkflowAdo`, `TicketTracker`, `TargetMemory`, `WorkflowUi`) `ThreadSource` and `Snapshots` are the exception: each has the IDE adapter and a test fake.
+- Keep it small: no DI frameworks, no abstraction layers, no interfaces with a single implementation. The workflow ports (`WorkflowGit`, `WorkflowAdo`, `TicketTracker`, `TargetMemory`, `WorkflowUi`), `ThreadSource`, `Snapshots`, `HttpTransport` and `AdoAuth` are the exception: each has the IDE adapter and a test fake.
 - Hardcoded English strings are fine.
 - Threading (2026.x): coroutines on `Dispatchers.EDT` and `AnAction`s get the write-intent lock, but plain Swing listeners (mouse, button, component listeners) do not. Wrap any editor, inlay or diff work started from a Swing listener in `WriteIntentReadAction.run { }`.
 - All Files view (platform combined diff, internal API). Lessons from getting it to work:

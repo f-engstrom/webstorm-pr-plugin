@@ -3,11 +3,7 @@ package se.personal.adoprreview.actions
 import com.intellij.icons.AllIcons
 import com.intellij.openapi.actionSystem.ActionUpdateThread
 import com.intellij.openapi.actionSystem.AnActionEvent
-import com.intellij.openapi.application.EDT
 import com.intellij.openapi.project.DumbAwareAction
-import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
 import se.personal.adoprreview.AdoNotifications
 import se.personal.adoprreview.state.PrReviewService
 import se.personal.adoprreview.toolwindow.PrListPanel
@@ -30,24 +26,18 @@ class CreatePrAction(private val panel: PrListPanel) :
         val repo = panel.repo ?: return
         val branch = repo.gitRepository.currentBranch?.name ?: return
         val remote = repo.remote
-        PrReviewService.getInstance(project).scope.launch(Dispatchers.EDT) {
-            try {
-                when (val outcome = ideWorkflow(project, repo, "Create Pull Request").createPr(branch, savedJiraTracker(remote.org))) {
-                    is CreateOutcome.AlreadyOpen -> {
-                        AdoNotifications.info(project, "Pull request already open", "#${outcome.prId} is open from $branch.", remote.webUrl(outcome.prId))
-                        panel.refreshAndSelect(outcome.prId)
-                    }
-                    is CreateOutcome.Created -> {
-                        val stale = if (outcome.fromStaleRemote) "<br>It shows $branch as it is on ${repo.gitRemote.name}, not your newer local commits; push to update it." else ""
-                        AdoNotifications.info(project, "Pull request created", "#${outcome.prId} ${outcome.title}$stale", remote.webUrl(outcome.prId))
-                        panel.refreshAndSelect(outcome.prId)
-                    }
-                    CreateOutcome.Cancelled -> Unit
+        PrReviewService.getInstance(project).launchOperation("Couldn't create pull request") {
+            when (val outcome = ideWorkflow(project, repo, "Create Pull Request").createPr(branch, savedJiraTracker(remote.org))) {
+                is CreateOutcome.AlreadyOpen -> {
+                    AdoNotifications.info(project, "Pull request already open", "#${outcome.prId} is open from $branch.", remote.webUrl(outcome.prId))
+                    panel.refreshAndSelect(outcome.prId)
                 }
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                AdoNotifications.error(project, "Couldn't create pull request", e)
+                is CreateOutcome.Created -> {
+                    val stale = if (outcome.fromStaleRemote) "<br>It shows $branch as it is on ${repo.gitRemote.name}, not your newer local commits; push to update it." else ""
+                    AdoNotifications.info(project, "Pull request created", "#${outcome.prId} ${outcome.title}$stale", remote.webUrl(outcome.prId))
+                    panel.refreshAndSelect(outcome.prId)
+                }
+                CreateOutcome.Cancelled -> Unit
             }
         }
     }

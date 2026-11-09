@@ -3,15 +3,11 @@ package se.personal.adoprreview.actions
 import com.intellij.icons.AllIcons
 import com.intellij.openapi.actionSystem.ActionUpdateThread
 import com.intellij.openapi.actionSystem.AnActionEvent
-import com.intellij.openapi.application.EDT
 import com.intellij.openapi.project.DumbAwareAction
 import com.intellij.openapi.project.Project
 import com.intellij.platform.ide.progress.withBackgroundProgress
-import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.launch
 import se.personal.adoprreview.AdoNotifications
 import se.personal.adoprreview.jira.JiraClient
 import se.personal.adoprreview.jira.JiraSignIn
@@ -45,15 +41,7 @@ class StartTicketAction : DumbAwareAction(
     override fun actionPerformed(e: AnActionEvent) {
         val project = e.project ?: return
         val repo = AdoRepoResolver.getInstance(project).resolve() ?: return
-        PrReviewService.getInstance(project).scope.launch(Dispatchers.EDT) {
-            try {
-                start(project, repo)
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                AdoNotifications.error(project, "Couldn't start the ticket", e)
-            }
-        }
+        PrReviewService.getInstance(project).launchOperation("Couldn't start the ticket") { start(project, repo) }
     }
 
     private suspend fun start(project: Project, repo: ResolvedRepo) {

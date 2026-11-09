@@ -81,7 +81,7 @@ private class JiraTracker(override val site: String, private val login: JiraAuth
 }
 
 private class SettingsTargetMemory(remote: AdoRemote) : TargetMemory {
-    private val key = "${remote.org}/${remote.project}/${remote.repo}".lowercase()
+    private val key = remote.key
     override fun last(): String? = AdoSettings.getInstance().lastTarget(key)
     override fun remember(branch: String) = AdoSettings.getInstance().setLastTarget(key, branch)
 }

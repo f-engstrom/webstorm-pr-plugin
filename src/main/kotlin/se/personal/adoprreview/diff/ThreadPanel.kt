@@ -3,7 +3,6 @@ package se.personal.adoprreview.diff
 import se.personal.adoprreview.conversation.PrRef
 import com.intellij.icons.AllIcons
 import com.intellij.openapi.actionSystem.CustomShortcutSet
-import com.intellij.openapi.application.EDT
 import com.intellij.openapi.editor.event.DocumentEvent
 import com.intellij.openapi.editor.event.DocumentListener
 import com.intellij.openapi.fileTypes.FileTypes
@@ -20,10 +19,6 @@ import com.intellij.ui.components.ActionLink
 import com.intellij.ui.components.panels.VerticalLayout
 import com.intellij.util.text.DateFormatUtil
 import com.intellij.util.ui.JBUI
-import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
-import se.personal.adoprreview.AdoNotifications
 import se.personal.adoprreview.api.dto.Comment
 import se.personal.adoprreview.api.dto.CommentThread
 import se.personal.adoprreview.api.dto.ThreadStatus
@@ -263,18 +258,7 @@ class ThreadPanel(
 
     private fun run(errorTitle: String, onFailure: () -> Unit = {}, action: suspend () -> Unit) {
         setBusy(true)
-        PrReviewService.getInstance(project).scope.launch(Dispatchers.EDT) {
-            try {
-                action()
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                onFailure()
-                AdoNotifications.error(project, errorTitle, e)
-            } finally {
-                setBusy(false)
-            }
-        }
+        PrReviewService.getInstance(project).launchOperation(errorTitle, onFailure = { onFailure() }, onFinally = { setBusy(false) }) { action() }
     }
 
     private fun setBusy(busy: Boolean) {

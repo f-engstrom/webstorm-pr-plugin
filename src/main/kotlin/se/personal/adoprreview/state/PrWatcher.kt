@@ -153,7 +153,7 @@ class PrWatcher(private val project: Project, private val scope: CoroutineScope)
         }.associateBy { it.prId }
 
         watched = states.size
-        val news = activity.polled("${remote.org}/${remote.project}/${remote.repo}".lowercase(), states)
+        val news = activity.polled(remote.key, states)
         if (news.isNotEmpty()) withContext(Dispatchers.EDT) { news.forEach { notify(repo, it.state, it.events) } }
     }
 

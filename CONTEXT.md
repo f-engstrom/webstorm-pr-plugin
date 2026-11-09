@@ -21,3 +21,9 @@
 **PR activity** (`state/PrActivity`): what's new on the listed PRs. It owns the list **badges** (New: never opened; New commits: pushes since last opened; New activity: comments by others since then, or anything the poll reported), the **unseen** set behind the dot on the tool window icon, and the poll **baseline**. The first poll after starting, switching repo or turning polling off only records the baseline. Opening a PR (**seen**) clears its activity badge and dot. The tool window observes it and holds no state of its own; services and actions ask it to **select** a PR (and thread) rather than reaching for the list panel.
 
 **Snapshot** (`LastSeenService`): what the user saw of a PR when they last opened it (iteration, source commit, latest comment by others, viewed files). Badges compare against it.
+
+**Repo key** (`AdoRemote.key`): `org/project/repo`, lower-cased. Identifies the repo for the remembered target branch and the poll baseline.
+
+**Active repo** (`AdoRepoResolver`): the project's first Git repository with a dev.azure.com remote, preferring `origin`. Cached; cleared when repositories or remotes change.
+
+**User operation** (`PrReviewService.launchOperation`): something the user started (a click or an action). It runs on the EDT; a failure becomes an error notification. Cancellation is never reported.

@@ -2,7 +2,6 @@ package se.personal.adoprreview.api
 
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.components.service
-import kotlinx.coroutines.future.await
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -30,11 +29,7 @@ import java.io.IOException
 import java.net.URI
 import java.net.URLDecoder
 import java.net.URLEncoder
-import java.net.http.HttpClient
-import java.net.http.HttpRequest
-import java.net.http.HttpResponse
 import java.nio.charset.StandardCharsets.UTF_8
-import java.time.Duration
 import java.time.Instant
 import java.util.concurrent.ConcurrentLinkedDeque
 import java.util.concurrent.atomic.AtomicInteger
@@ -45,8 +40,28 @@ class AdoException(message: String, val status: Int? = null) : Exception(message
 
 enum class PrFilter(val label: String) { REVIEWER("Assigned to me"), AUTHOR("Created by me"), ALL("All active") }
 
+/** How [AdoClient] authenticates per org. Production: the Azure CLI ([AzCliToken]); tests: a fake. */
+interface AdoAuth {
+    suspend fun authHeader(org: String): String
+    /** Drops a cached token after the server rejected it, so the next [authHeader] gets a fresh one. */
+    suspend fun invalidate(org: String)
+}
+
+private object AzCliAuth : AdoAuth {
+    override suspend fun authHeader(org: String) = AzCliToken.getInstance().authHeader(org)
+    override suspend fun invalidate(org: String) = AzCliToken.getInstance().invalidate(org)
+}
+
 @Service
-class AdoClient {
+internal class AdoClientHolder {
+    val client = AdoClient(JavaHttpTransport(), AzCliAuth)
+}
+
+/**
+ * Azure DevOps REST, one method per endpoint. Owns the protocol around them: api-version, JSON, paging, error
+ * messages, and retrying once with a fresh token when ADO rejects one (a 401, or a 203/redirect to its sign-in page).
+ */
+class AdoClient(private val transport: HttpTransport, private val auth: AdoAuth) {
 
     /** Request counts and the last failure, for the Status tab. Paths only; no query strings or headers. */
     class NetworkStats {
@@ -81,11 +96,6 @@ class AdoClient {
     }
 
     val stats = NetworkStats()
-
-    private val http = HttpClient.newBuilder()
-        .connectTimeout(Duration.ofSeconds(20))
-        .followRedirects(HttpClient.Redirect.NEVER)
-        .build()
 
     suspend fun me(org: String): ConnectionData =
         get("${AdoRemote.HOST}/${AdoRemote.encode(org)}/_apis/connectionData", apiVersion = null)
@@ -146,7 +156,7 @@ class AdoClient {
             API_VERSION,
         ),
         accept = "application/octet-stream",
-    ) { GET() }
+    )
 
     suspend fun threads(remote: AdoRemote, prId: Int): List<CommentThread> =
         get<ListResponse<CommentThread>>("${remote.apiUrl}/pullrequests/$prId/threads").value
@@ -166,9 +176,7 @@ class AdoClient {
     suspend fun setLiked(remote: AdoRemote, prId: Int, threadId: Int, commentId: Int, liked: Boolean) {
         val url = withApiVersion("${remote.apiUrl}/pullrequests/$prId/threads/$threadId/comments/$commentId/likes", API_VERSION)
         // A POST without a body gets no Content-Length header from java.net.http, which ADO rejects with 411.
-        send(url) {
-            if (liked) header("Content-Type", "application/json").POST(HttpRequest.BodyPublishers.ofString("{}")) else DELETE()
-        }
+        if (liked) send(url, method = "POST", body = "{}") else send(url, method = "DELETE")
     }
 
     suspend fun editComment(remote: AdoRemote, prId: Int, threadId: Int, commentId: Int, content: String) {
@@ -177,55 +185,51 @@ class AdoClient {
 
     suspend fun deleteComment(remote: AdoRemote, prId: Int, threadId: Int, commentId: Int) {
         val url = withApiVersion("${remote.apiUrl}/pullrequests/$prId/threads/$threadId/comments/$commentId", API_VERSION)
-        send(url) { DELETE() }
+        send(url, method = "DELETE")
     }
 
     suspend fun setThreadStatus(remote: AdoRemote, prId: Int, threadId: Int, status: ThreadStatus) {
         write("PATCH", "${remote.apiUrl}/pullrequests/$prId/threads/$threadId", ThreadStatusUpdate(status.value))
     }
 
-    private suspend inline fun <reified B> write(httpMethod: String, url: String, body: B): ByteArray {
-        val payload = json.encodeToString(body)
-        return send(withApiVersion(url, API_VERSION)) {
-            header("Content-Type", "application/json").method(httpMethod, HttpRequest.BodyPublishers.ofString(payload))
-        }
-    }
+    private suspend inline fun <reified B> write(httpMethod: String, url: String, body: B): ByteArray =
+        send(withApiVersion(url, API_VERSION), method = httpMethod, body = json.encodeToString(body))
 
     private suspend inline fun <reified T> get(url: String, apiVersion: String? = API_VERSION): T =
-        json.decodeFromString(String(send(withApiVersion(url, apiVersion)) { GET() }, UTF_8))
+        json.decodeFromString(String(send(withApiVersion(url, apiVersion)), UTF_8))
 
     private suspend fun send(
         url: String,
         accept: String = "application/json",
+        method: String = "GET",
+        /** JSON. */
+        body: String? = null,
         retryOnAuth: Boolean = true,
-        method: HttpRequest.Builder.() -> HttpRequest.Builder,
     ): ByteArray {
-        val token = AzCliToken.getInstance()
         val org = orgOf(url)
-        val request = HttpRequest.newBuilder(URI(url))
-            .timeout(Duration.ofSeconds(60))
-            .header("Authorization", token.authHeader(org))
-            .header("Accept", accept)
-            .method()
-            .build()
+        val headers = buildMap {
+            put("Authorization", auth.authHeader(org))
+            put("Accept", accept)
+            if (body != null) put("Content-Type", "application/json")
+        }
         val path = URI(url).path
-        val response = try {
-            http.sendAsync(request, HttpResponse.BodyHandlers.ofByteArray()).await()
+        val reply = try {
+            transport.send(HttpCall(method, url, headers, body?.toByteArray(UTF_8)))
         } catch (e: IOException) {
-            stats.record(request.method(), path, null, e.message ?: e.javaClass.simpleName)
+            stats.record(method, path, null, e.message ?: e.javaClass.simpleName)
             throw e
         }
-        val status = response.statusCode()
-        stats.record(request.method(), path, status, if (status in 200..299) null else "HTTP $status")
+        val status = reply.status
+        stats.record(method, path, status, if (status in 200..299) null else "HTTP $status")
         // With a bad token ADO may answer with a sign-in page (203 or a redirect) rather than a 401.
         val authFailed = status == 401 || status == 203 || status in 300..399
         if (authFailed && retryOnAuth) {
-            token.invalidate(org)
-            return send(url, accept, retryOnAuth = false, method)
+            auth.invalidate(org)
+            return send(url, accept, method, body, retryOnAuth = false)
         }
         if (authFailed) throw AdoException("Azure DevOps rejected the Azure CLI token (HTTP $status). Check which account `az` is logged in as for this org.", 401)
-        if (status !in 200..299) throw AdoException(errorMessage(status, String(response.body(), UTF_8)), status)
-        return response.body()
+        if (status !in 200..299) throw AdoException(errorMessage(status, reply.text), status)
+        return reply.body
     }
 
     private fun errorMessage(status: Int, body: String): String {
@@ -256,6 +260,6 @@ class AdoClient {
             explicitNulls = false
         }
 
-        fun getInstance(): AdoClient = service()
+        fun getInstance(): AdoClient = service<AdoClientHolder>().client
     }
 }

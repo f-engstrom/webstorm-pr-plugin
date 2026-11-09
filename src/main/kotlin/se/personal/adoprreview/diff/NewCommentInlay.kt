@@ -6,7 +6,6 @@ import com.intellij.diff.util.Side
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.actionSystem.CustomShortcutSet
 import com.intellij.openapi.application.WriteIntentReadAction
-import com.intellij.openapi.application.EDT
 import com.intellij.openapi.editor.Editor
 import com.intellij.openapi.editor.ex.EditorEx
 import com.intellij.openapi.editor.event.DocumentEvent
@@ -26,9 +25,6 @@ import com.intellij.ui.SimpleColoredComponent
 import com.intellij.ui.SimpleTextAttributes
 import com.intellij.ui.components.panels.VerticalLayout
 import com.intellij.util.ui.JBUI
-import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
 import se.personal.adoprreview.AdoNotifications
 import se.personal.adoprreview.api.dto.ChangeEntry
 import se.personal.adoprreview.api.dto.NewComment
@@ -198,18 +194,14 @@ class NewCommentPanel(
 
         setBusy(true)
         val service = PrReviewService.getInstance(target.project)
-        service.scope.launch(Dispatchers.EDT) {
-            try {
-                // On success the reloaded threads show the new thread, so this inlay goes away.
-                service.conversations.post(PrRef(target.pr.repo.remote, prId), anchor, text, details.iterationContext)
-                close()
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                CopyPasteManager.getInstance().setContents(StringSelection(text))
-                AdoNotifications.error(target.project, "Couldn't post comment (text copied to clipboard)", e)
-                setBusy(false)
-            }
+        val onFailure = { _: Exception ->
+            CopyPasteManager.getInstance().setContents(StringSelection(text))
+            setBusy(false)
+        }
+        service.launchOperation("Couldn't post comment (text copied to clipboard)", onFailure) {
+            // On success the reloaded threads show the new thread, so this inlay goes away.
+            service.conversations.post(PrRef(target.pr.repo.remote, prId), anchor, text, details.iterationContext)
+            close()
         }
     }
 

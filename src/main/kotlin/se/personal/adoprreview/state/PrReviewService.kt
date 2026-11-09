@@ -1,5 +1,11 @@
 package se.personal.adoprreview.state
 
+import se.personal.adoprreview.AdoNotifications
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CancellationException
+import com.intellij.openapi.application.EDT
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.components.service
 import com.intellij.openapi.project.Project
@@ -111,6 +117,28 @@ class PrReviewService(private val project: Project, val scope: CoroutineScope) {
 
     suspend fun vote(remote: AdoRemote, prId: Int, vote: Vote) {
         AdoClient.getInstance().vote(remote, prId, myId(remote.org), vote)
+    }
+
+    /**
+     * Runs an operation the user started (a click, an action) on the EDT. A failure, other than cancellation, runs
+     * [onFailure] and then shows an error notification titled [errorTitle]; [onFinally] runs either way.
+     */
+    fun launchOperation(
+        errorTitle: String,
+        onFailure: (Exception) -> Unit = {},
+        onFinally: () -> Unit = {},
+        block: suspend CoroutineScope.() -> Unit,
+    ): Job = scope.launch(Dispatchers.EDT) {
+        try {
+            block()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            onFailure(e)
+            AdoNotifications.error(project, errorTitle, e)
+        } finally {
+            onFinally()
+        }
     }
 
     companion object {

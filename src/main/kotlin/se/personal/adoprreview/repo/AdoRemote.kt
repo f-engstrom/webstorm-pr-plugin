@@ -12,6 +12,9 @@ data class AdoRemote(val org: String, val project: String, val repo: String) {
 
     val apiUrl: String get() = "$projectUrl/_apis/git/repositories/${encode(repo)}"
 
+    /** `org/project/repo`, lower-cased: identifies the repo in settings and the poll baseline. */
+    val key: String get() = "$org/$project/$repo".lowercase()
+
     fun webUrl(prId: Int): String = "$projectUrl/_git/${encode(repo)}/pullrequest/$prId"
 
     companion object {
