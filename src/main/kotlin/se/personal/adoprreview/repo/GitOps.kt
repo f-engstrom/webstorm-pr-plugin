@@ -98,6 +98,16 @@ object GitOps {
         if (!result.success()) throw VcsException("git checkout failed: ${result.errorOutputAsJoinedString}")
     }
 
+    /** `git branch -D <branch>`; used to undo a branch Start Ticket made but couldn't push. */
+    fun deleteBranch(project: Project, repo: ResolvedRepo, branch: String) {
+        val handler = GitLineHandler(project, repo.gitRepository.root, GitCommand.BRANCH).apply {
+            addParameters("-D", branch)
+        }
+        val result = Git.getInstance().runCommand(handler)
+        repo.gitRepository.update()
+        if (!result.success()) throw VcsException("git branch -D failed: ${result.errorOutputAsJoinedString}")
+    }
+
     /** `git commit --allow-empty -m <message>`; commit hooks still run. */
     fun emptyCommit(project: Project, repo: ResolvedRepo, message: String) {
         val handler = GitLineHandler(project, repo.gitRepository.root, GitCommand.COMMIT).apply {
