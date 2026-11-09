@@ -11,3 +11,13 @@
 **Rollback** (Start Ticket): if the empty commit or the push fails, switch back to the previous branch and delete the new one. Once the push has succeeded the branch is kept, even if the PR fails; the user creates the PR with +.
 
 **Jira problems**: a failed assign or a missing In Progress transition. These are reported as warnings and never undo the branch or the PR.
+
+**PR conversation** (`conversation/PrConversations`): the review threads of a PR and every way to change them: post, reply, like, edit, delete, resolve. Views observe its threads; every write reloads them. Whoever fetches (details, diff, list badges, background poll) gets threads with system threads removed and @mentions resolved, and PRs open in a view are updated. An older fetch finishing after a newer one is dropped.
+
+**Line anchor**: where a new comment goes: a file, a side (source = right/new, target = left/old) and 0-based editor lines and columns. `Anchors` converts to and from ADO's 1-based left/right positions.
+
+**Reveal**: a request (from a notification's "Show") to expand and scroll to one thread when a diff shows it; taken once.
+
+**PR activity** (`state/PrActivity`): what's new on the listed PRs. It owns the list **badges** (New: never opened; New commits: pushes since last opened; New activity: comments by others since then, or anything the poll reported), the **unseen** set behind the dot on the tool window icon, and the poll **baseline**. The first poll after starting, switching repo or turning polling off only records the baseline. Opening a PR (**seen**) clears its activity badge and dot. The tool window observes it and holds no state of its own; services and actions ask it to **select** a PR (and thread) rather than reaching for the list panel.
+
+**Snapshot** (`LastSeenService`): what the user saw of a PR when they last opened it (iteration, source commit, latest comment by others, viewed files). Badges compare against it.

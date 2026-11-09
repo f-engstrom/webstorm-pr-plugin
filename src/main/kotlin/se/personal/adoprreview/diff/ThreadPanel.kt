@@ -1,5 +1,6 @@
 package se.personal.adoprreview.diff
 
+import se.personal.adoprreview.conversation.PrRef
 import com.intellij.icons.AllIcons
 import com.intellij.openapi.actionSystem.CustomShortcutSet
 import com.intellij.openapi.application.EDT
@@ -63,6 +64,9 @@ class ThreadPanel(
     private val state: ThreadUiState,
 ) : InlayCard(BorderLayout(), if (thread.threadStatus.isResolved) InlayCard.RESOLVED else InlayCard.ACTIVE) {
 
+    private val pr = PrRef(remote, prId)
+    private val conversations get() = PrReviewService.getInstance(project).conversations
+
     private val header = SimpleColoredComponent().apply {
         ipad = JBUI.emptyInsets()
         cursor = Cursor.getPredefinedCursor(Cursor.HAND_CURSOR)
@@ -102,7 +106,7 @@ class ThreadPanel(
         replyButton.addActionListener { submitReply() }
         statusButton.addActionListener {
             val status = if (thread.threadStatus.isResolved) ThreadStatus.ACTIVE else ThreadStatus.FIXED
-            run("Couldn't update thread") { PrReviewService.getInstance(project).setThreadStatus(remote, prId, thread, status) }
+            run("Couldn't update thread") { conversations.setStatus(pr, thread.id, status) }
         }
     }
 
@@ -171,7 +175,7 @@ class ThreadPanel(
         val liked = comment.isLikedBy(myId)
         val count = comment.usersLiked.size
         return ActionLink(if (count > 0) "$count" else "") {
-            run("Couldn't update like") { PrReviewService.getInstance(project).setLiked(remote, prId, thread, comment, !liked) }
+            run("Couldn't update like") { conversations.setLiked(pr, thread.id, comment.id, !liked) }
         }.apply {
             icon = if (liked) AllIcons.Ide.LikeSelected else if (count > 0) AllIcons.Ide.Like else AllIcons.Ide.LikeDimmed
             toolTipText = when {
@@ -207,7 +211,7 @@ class ThreadPanel(
                 val draft = field.text
                 state.editing.remove(comment.id)
                 run("Couldn't save comment", onFailure = { state.editing[comment.id] = draft; renderBody() }) {
-                    PrReviewService.getInstance(project).editComment(remote, prId, thread, comment, newText)
+                    conversations.edit(pr, thread.id, comment.id, newText)
                 }
             }
         }
@@ -227,7 +231,7 @@ class ThreadPanel(
             project, "Delete this comment? This can't be undone.", "Delete Comment", "Delete", "Cancel", Messages.getQuestionIcon(),
         )
         if (answer != Messages.YES) return
-        run("Couldn't delete comment") { PrReviewService.getInstance(project).deleteComment(remote, prId, thread, comment) }
+        run("Couldn't delete comment") { conversations.delete(pr, thread.id, comment.id) }
     }
 
     private fun submitReply() {
@@ -237,7 +241,7 @@ class ThreadPanel(
         val draft = replyField.text
         state.replyDraft = ""
         run("Couldn't post reply", onFailure = { state.replyDraft = draft }) {
-            PrReviewService.getInstance(project).reply(remote, prId, thread, text)
+            conversations.reply(pr, thread, text)
         }
     }
 

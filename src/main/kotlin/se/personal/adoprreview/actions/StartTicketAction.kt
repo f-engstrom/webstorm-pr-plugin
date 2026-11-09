@@ -19,7 +19,6 @@ import se.personal.adoprreview.repo.AdoRepoResolver
 import se.personal.adoprreview.repo.ResolvedRepo
 import se.personal.adoprreview.state.AdoSettings
 import se.personal.adoprreview.state.PrReviewService
-import se.personal.adoprreview.state.PrWatcher
 import se.personal.adoprreview.toolwindow.StartTicketDialog
 import se.personal.adoprreview.workflow.StartOutcome
 import se.personal.adoprreview.workflow.StartRequest
@@ -89,15 +88,15 @@ class StartTicketAction : DumbAwareAction(
 
         val request = StartRequest(issue, dialog.branchName, dialog.targetBranch, dialog.assignToMe, dialog.moveToInProgress)
         val remote = repo.remote
-        val list = PrWatcher.getInstance(project).listPanel
+        val activity = PrReviewService.getInstance(project).activity
         when (val outcome = workflow.startTicket(request, jiraTracker(session))) {
             is StartOutcome.Started -> {
                 AdoNotifications.info(project, "Started ${issue.key}", "On ${outcome.branch} · draft PR #${outcome.prId}", remote.webUrl(outcome.prId))
                 if (outcome.jiraProblems.isNotEmpty()) AdoNotifications.warn(project, "Jira wasn't fully updated", outcome.jiraProblems.joinToString("<br>"))
-                list?.refreshAndSelect(outcome.prId)
+                activity.select(outcome.prId)
             }
             is StartOutcome.SwitchedToExisting -> if (outcome.prId != null) {
-                list?.refreshAndSelect(outcome.prId)
+                activity.select(outcome.prId)
                 AdoNotifications.info(project, "On ${outcome.branch}", "Its pull request is #${outcome.prId}.", remote.webUrl(outcome.prId))
             } else {
                 AdoNotifications.info(project, "On ${outcome.branch}", "No active pull request from it yet. Use + to create one.")

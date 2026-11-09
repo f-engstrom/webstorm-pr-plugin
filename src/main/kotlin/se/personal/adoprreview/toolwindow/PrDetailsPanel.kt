@@ -1,5 +1,6 @@
 package se.personal.adoprreview.toolwindow
 
+import se.personal.adoprreview.conversation.PrRef
 import com.intellij.icons.AllIcons
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.application.EDT
@@ -58,8 +59,6 @@ class PrDetailsPanel(
     parentDisposable: Disposable,
     /** Called after the PR was changed here (vote, edit, publish), to reload list and details. */
     private val onChanged: () -> Unit,
-    /** Called once the user has seen a PR, so the list can drop its badges. */
-    private val onSeen: (prId: Int) -> Unit,
 ) : JPanel(CardLayout()) {
 
     private val message = JBLabel("", SwingConstants.CENTER).apply { foreground = UIUtil.getContextHelpForeground() }
@@ -196,10 +195,10 @@ class PrDetailsPanel(
                 markSeen(this, repo, details)
                 // Child of loadJob, so selecting another PR stops it.
                 launch {
-                    service.threads(pr.pullRequestId).collect { threads -> renderThreads(repo, details, threads) }
+                    service.conversations.threads(pr.pullRequestId).collect { threads -> renderThreads(repo, details, threads) }
                 }
                 try {
-                    service.reloadThreads(repo.remote, pr.pullRequestId)
+                    service.conversations.refresh(PrRef(repo.remote, pr.pullRequestId))
                 } catch (e: CancellationException) {
                     throw e
                 } catch (e: Exception) {
@@ -229,7 +228,7 @@ class PrDetailsPanel(
             lastThreadActivity = previous?.lastThreadActivity,
             viewedFiles = previous?.viewedFiles.orEmpty(),
         ))
-        onSeen(prId)
+        PrReviewService.getInstance(project).activity.seen(prId)
         renderViewState()
 
         if (previous != null && previous.iterationId < details.latestIteration) {
@@ -365,7 +364,7 @@ class PrDetailsPanel(
     private fun revealInDiff(details: PrDetails, thread: CommentThread): Boolean {
         val path = thread.filePath ?: return false
         val index = fileTree.files.indexOfFirst { it.path == path }.takeIf { it >= 0 } ?: return false
-        PrReviewService.getInstance(project).requestReveal(details.pullRequest.pullRequestId, thread.id)
+        PrReviewService.getInstance(project).conversations.requestReveal(details.pullRequest.pullRequestId, thread.id)
         tabs.selectedIndex = 1
         openDiff(fileTree.files, index)
         return true
@@ -402,7 +401,7 @@ class PrDetailsPanel(
                     if (LastSeen.hasNewActivity(snapshot, latest)) snapshot.copy(lastThreadActivity = latest.toString()) else snapshot
                 }
             }
-            onSeen(prId)
+            PrReviewService.getInstance(project).activity.seen(prId)
         }
     }
 

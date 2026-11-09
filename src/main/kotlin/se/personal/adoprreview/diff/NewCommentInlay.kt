@@ -1,5 +1,7 @@
 package se.personal.adoprreview.diff
 
+import se.personal.adoprreview.conversation.PrRef
+import se.personal.adoprreview.conversation.LineAnchor
 import com.intellij.diff.util.Side
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.actionSystem.CustomShortcutSet
@@ -29,12 +31,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import se.personal.adoprreview.AdoNotifications
 import se.personal.adoprreview.api.dto.ChangeEntry
-import se.personal.adoprreview.api.dto.FilePosition
 import se.personal.adoprreview.api.dto.NewComment
-import se.personal.adoprreview.api.dto.NewThread
-import se.personal.adoprreview.api.dto.PrThreadContext
-import se.personal.adoprreview.api.dto.ThreadContext
-import se.personal.adoprreview.api.dto.ThreadStatus
 import se.personal.adoprreview.state.PrReviewService
 import java.awt.FlowLayout
 import java.awt.Toolkit
@@ -194,21 +191,9 @@ class NewCommentPanel(
         }
         val details = target.pr.details
         val prId = details.pullRequest.pullRequestId
-        val start = FilePosition(range.startLine + 1, range.startColumn + 1)
-        val end = FilePosition(range.endLine + 1, range.endColumn + 1)
-        val thread = NewThread(
-            comments = listOf(NewComment(text, parentCommentId = 0, commentType = 1)),
-            status = ThreadStatus.ACTIVE.value,
-            threadContext = if (side == Side.RIGHT) {
-                ThreadContext(filePath = target.change.path, rightFileStart = start, rightFileEnd = end)
-            } else {
-                // filePath is always the PR's (new) path; the side is given by left vs right positions.
-                ThreadContext(filePath = target.change.path, leftFileStart = start, leftFileEnd = end)
-            },
-            pullRequestThreadContext = PrThreadContext(
-                changeTrackingId = target.change.changeTrackingId,
-                iterationContext = details.iterationContext,
-            ),
+        val anchor = LineAnchor(
+            target.change.path, side, range.startLine, range.startColumn, range.endLine, range.endColumn,
+            target.change.changeTrackingId,
         )
 
         setBusy(true)
@@ -216,7 +201,7 @@ class NewCommentPanel(
         service.scope.launch(Dispatchers.EDT) {
             try {
                 // On success the reloaded threads show the new thread, so this inlay goes away.
-                service.createThread(target.pr.repo.remote, prId, thread)
+                service.conversations.post(PrRef(target.pr.repo.remote, prId), anchor, text, details.iterationContext)
                 close()
             } catch (e: CancellationException) {
                 throw e

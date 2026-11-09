@@ -1,5 +1,6 @@
 package se.personal.adoprreview.state
 
+import se.personal.adoprreview.conversation.PrRef
 import com.intellij.icons.AllIcons
 import com.intellij.ide.BrowserUtil
 import com.intellij.notification.NotificationAction
@@ -32,7 +33,6 @@ import se.personal.adoprreview.api.AdoClient
 import se.personal.adoprreview.api.PrFilter
 import se.personal.adoprreview.repo.AdoRepoResolver
 import se.personal.adoprreview.repo.ResolvedRepo
-import se.personal.adoprreview.toolwindow.PrListPanel
 import java.time.Instant
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.minutes
@@ -49,14 +49,10 @@ import kotlin.time.TimeSource
 @Service(Service.Level.PROJECT)
 class PrWatcher(private val project: Project, private val scope: CoroutineScope) {
 
-    /** The open Pull Requests panel, for "Show"; set by the tool window factory. */
-    @Volatile
-    var listPanel: PrListPanel? = null
-
     private var job: Job? = null
-    private var baseline: Map<Int, PrActivityState>? = null
-    private var baselineRepo: String? = null
     private val pollLock = Mutex()
+    /** PRs in the last successful poll, for the Status tab. */
+    @Volatile private var watched = 0
 
     /** What the watcher is doing, for the Status tab. */
     enum class Phase(val label: String) {
@@ -72,22 +68,16 @@ class PrWatcher(private val project: Project, private val scope: CoroutineScope)
     @Volatile var lastPoll: PollResult? = null
         private set
 
-    val hasBaseline: Boolean get() = baseline != null
-    val unseenCount: Int get() = unseen.size
+    private val activity get() = PrReviewService.getInstance(project).activity
+
+    val hasBaseline: Boolean get() = activity.hasBaseline
+    val unseenCount: Int get() = activity.unseen.value.size
     val interval: Duration get() = INTERVAL
     val idlePause: Duration get() = IDLE_PAUSE
 
     /** Polls right away (from the Status tab), unless a poll is already running. */
     fun pollNow() {
         scope.launch { runPoll() }
-    }
-
-    /** PRs with activity the user hasn't opened yet; drives the dot on the tool window icon. EDT only. */
-    private val unseen = mutableSetOf<Int>()
-
-    /** Called when the user opens a PR. */
-    fun markSeen(prId: Int) {
-        if (unseen.remove(prId)) updateIcon()
     }
 
     /**
@@ -98,11 +88,13 @@ class PrWatcher(private val project: Project, private val scope: CoroutineScope)
     fun start() {
         if (job?.isActive == true) return
         nextPoll = TimeSource.Monotonic.markNow() + FIRST_POLL
+        // The dot on the tool window icon follows unseen activity, whoever clears it.
+        scope.launch(Dispatchers.EDT) { activity.unseen.collect { updateIcon(it.isNotEmpty()) } }
         job = scope.launch {
             while (isActive) {
                 delay(TICK)
                 if (!AdoSettings.getInstance().backgroundNotifications) {
-                    baseline = null
+                    activity.resetBaseline()
                     phase = Phase.DISABLED
                     continue
                 }
@@ -130,7 +122,7 @@ class PrWatcher(private val project: Project, private val scope: CoroutineScope)
             error = e.message ?: e.javaClass.simpleName
             thisLogger().info("Background PR poll failed: $error")
         } finally {
-            lastPoll = PollResult(Instant.now(), started.elapsedNow(), error, baseline?.size ?: 0)
+            lastPoll = PollResult(Instant.now(), started.elapsedNow(), error, watched)
             nextPoll = TimeSource.Monotonic.markNow() + INTERVAL
             phase = Phase.WAITING // the next tick corrects this if turned off or idle
             pollLock.unlock()
@@ -152,37 +144,21 @@ class PrWatcher(private val project: Project, private val scope: CoroutineScope)
             prs.map { pr ->
                 async {
                     limit.withPermit {
-                        val threads = service.fetchThreads(remote, pr.pullRequestId)
                         // PRs open in details or diffs get new comments live.
-                        withContext(Dispatchers.EDT) { service.publishThreadsIfOpened(pr.pullRequestId, threads) }
+                        val threads = service.conversations.latest(PrRef(remote, pr.pullRequestId))
                         Activity.state(pr, threads, myId)
                     }
                 }
             }.awaitAll()
         }.associateBy { it.prId }
 
-        val repoKey = "${remote.org}/${remote.project}/${remote.repo}".lowercase()
-        val previous = baseline.takeIf { baselineRepo == repoKey }
-        baseline = states
-        baselineRepo = repoKey
-        if (previous == null) return
-
-        withContext(Dispatchers.EDT) {
-            unseen.retainAll(states.keys) // closed or completed PRs
-            for (state in states.values) {
-                val events = Activity.events(previous[state.prId], state)
-                if (events.isEmpty()) continue
-                unseen += state.prId
-                val badge = if (ActivityEvent.AddedAsReviewer in events) Badge.NEW else Badge.NEW_ACTIVITY
-                listPanel?.markActivity(state.prId, badge)
-                notify(repo, state, events)
-            }
-            updateIcon()
-        }
+        watched = states.size
+        val news = activity.polled("${remote.org}/${remote.project}/${remote.repo}".lowercase(), states)
+        if (news.isNotEmpty()) withContext(Dispatchers.EDT) { news.forEach { notify(repo, it.state, it.events) } }
     }
 
-    private fun updateIcon() {
-        ToolWindowManager.getInstance(project).getToolWindow(TOOL_WINDOW_ID)?.setIcon(badgeIcon.getLiveIndicatorIcon(unseen.isNotEmpty()))
+    private fun updateIcon(dot: Boolean) {
+        ToolWindowManager.getInstance(project).getToolWindow(TOOL_WINDOW_ID)?.setIcon(badgeIcon.getLiveIndicatorIcon(dot))
     }
 
     private fun notify(repo: ResolvedRepo, state: PrActivityState, events: List<ActivityEvent>) {
@@ -209,7 +185,7 @@ class PrWatcher(private val project: Project, private val scope: CoroutineScope)
         val toolWindow = ToolWindowManager.getInstance(project).getToolWindow(TOOL_WINDOW_ID) ?: return
         toolWindow.activate {
             toolWindow.contentManager.getContent(0)?.let(toolWindow.contentManager::setSelectedContent)
-            listPanel?.refreshAndSelect(prId, revealThread = threadId)
+            activity.select(prId, threadId)
         }
     }
 

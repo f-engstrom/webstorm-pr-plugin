@@ -1,5 +1,6 @@
 package se.personal.adoprreview.toolwindow
 
+import se.personal.adoprreview.conversation.PrRef
 import com.intellij.dvcs.repo.VcsRepositoryManager
 import com.intellij.dvcs.repo.VcsRepositoryMappingListener
 import com.intellij.ide.BrowserUtil
@@ -20,27 +21,17 @@ import com.intellij.ui.components.JBList
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.sync.Semaphore
-import kotlinx.coroutines.sync.withPermit
 import se.personal.adoprreview.AdoNotifications
 import se.personal.adoprreview.actions.CreatePrAction
 import se.personal.adoprreview.actions.FilterActionGroup
 import se.personal.adoprreview.actions.OpenInBrowserAction
 import se.personal.adoprreview.actions.RefreshAction
-import se.personal.adoprreview.api.AdoClient
 import se.personal.adoprreview.api.PrFilter
 import se.personal.adoprreview.api.dto.PullRequest
-import se.personal.adoprreview.api.dto.reviewThreads
 import se.personal.adoprreview.repo.AdoRepoResolver
 import se.personal.adoprreview.repo.ResolvedRepo
 import se.personal.adoprreview.state.AdoSettings
-import se.personal.adoprreview.state.Badge
-import se.personal.adoprreview.state.LastSeen
-import se.personal.adoprreview.state.LastSeenService
-import se.personal.adoprreview.state.PrList
-import se.personal.adoprreview.state.PrWatcher
 import se.personal.adoprreview.state.PrReviewService
 import java.awt.event.MouseEvent
 import javax.swing.ListSelectionModel
@@ -53,7 +44,7 @@ class PrListPanel(private val project: Project, parentDisposable: Disposable) : 
     }
     private val renderer = PrCellRenderer()
     // After voting or editing, reload the list and, through reselection, the details.
-    private val details = PrDetailsPanel(project, parentDisposable, onChanged = { refresh() }, onSeen = ::onSeen)
+    private val details = PrDetailsPanel(project, parentDisposable, onChanged = { refresh() })
     private var loadJob: Job? = null
 
     var repo: ResolvedRepo? = null
@@ -89,6 +80,15 @@ class PrListPanel(private val project: Project, parentDisposable: Disposable) : 
             VcsRepositoryMappingListener { invokeLater { if (repo == null) refresh() } },
         )
         Disposer.register(parentDisposable) { loadJob?.cancel() }
+
+        // Badges, "Show" from notifications, and PRs the poll found that aren't listed yet.
+        val activity = PrReviewService.getInstance(project).activity
+        val watch = PrReviewService.getInstance(project).scope.launch(Dispatchers.EDT) {
+            launch { activity.badges.collect { renderer.badges = it; list.repaint() } }
+            launch { activity.selects.collect { if (it != null) activity.takeSelect()?.let { request -> refreshAndSelect(request.prId, request.threadId) } } }
+            launch { activity.reloads.collect { if (loadJob?.isActive != true) refresh() } }
+        }
+        Disposer.register(parentDisposable) { watch.cancel() }
     }
 
     /** Reloads and selects [prId]; if the current filter hides it (e.g. your new PR under "Assigned to me"), switches to "Created by me". */
@@ -119,7 +119,8 @@ class PrListPanel(private val project: Project, parentDisposable: Disposable) : 
             try {
                 val result = PrReviewService.getInstance(project).loadPullRequests(resolved.remote, AdoSettings.getInstance().listFilter, reloadUser)
                 renderer.myId = result.myId
-                renderer.badges = result.pullRequests.associate { it.pullRequestId to LastSeen.badges(it, snapshot(resolved, it.pullRequestId)) }
+                val activity = PrReviewService.getInstance(project).activity
+                activity.listed(resolved.remote.org, result.pullRequests)
                 model.replaceAll(result.pullRequests)
                 list.emptyText.text = "No active pull requests"
                 val index = result.pullRequests.indexOfFirst { it.pullRequestId == selectedId }
@@ -129,7 +130,12 @@ class PrListPanel(private val project: Project, parentDisposable: Disposable) : 
                 } else if (selectId != null && AdoSettings.getInstance().listFilter == PrFilter.REVIEWER) {
                     retryAsAuthor = true
                 }
-                if (!retryAsAuthor) launch { checkActivity(resolved, result) }
+                // Needs each PR's threads, so it runs after the list is shown.
+                if (!retryAsAuthor) launch {
+                    activity.checkThreads(result.myId) { prId ->
+                        PrReviewService.getInstance(project).conversations.latest(PrRef(resolved.remote, prId))
+                    }
+                }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -146,55 +152,6 @@ class PrListPanel(private val project: Project, parentDisposable: Disposable) : 
             }
         }
     }
-
-    /**
-     * Adds "New activity" to PRs where someone else commented since the user last looked.
-     * Needs each PR's threads, so it runs after the list is shown, a few requests at a time.
-     */
-    private suspend fun checkActivity(repo: ResolvedRepo, result: PrList) {
-        val limit = Semaphore(6)
-        coroutineScope {
-            for (pr in result.pullRequests) {
-                val seen = snapshot(repo, pr.pullRequestId) ?: continue
-                launch {
-                    val threads = try {
-                        limit.withPermit { AdoClient.getInstance().threads(repo.remote, pr.pullRequestId).reviewThreads() }
-                    } catch (e: CancellationException) {
-                        throw e
-                    } catch (_: Exception) {
-                        return@launch
-                    }
-                    // Re-read the snapshot: the user may have opened the PR meanwhile.
-                    val current = snapshot(repo, pr.pullRequestId) ?: seen
-                    if (LastSeen.hasNewActivity(current, LastSeen.latestActivityByOthers(threads, result.myId))) {
-                        renderer.badges += pr.pullRequestId to (renderer.badges[pr.pullRequestId].orEmpty() + Badge.NEW_ACTIVITY)
-                        list.repaint()
-                    }
-                }
-            }
-        }
-    }
-
-    /** Marks [prId] from background polling; a PR not in the list yet (just added as reviewer) triggers a reload. */
-    fun markActivity(prId: Int, badge: Badge) {
-        if (model.items.none { it.pullRequestId == prId }) {
-            if (badge == Badge.NEW && loadJob?.isActive != true) refresh()
-            return
-        }
-        renderer.badges += prId to (renderer.badges[prId].orEmpty() + badge)
-        list.repaint()
-    }
-
-    private fun onSeen(prId: Int) {
-        PrWatcher.getInstance(project).markSeen(prId)
-        val repo = repo ?: return
-        val pr = model.items.firstOrNull { it.pullRequestId == prId } ?: return
-        renderer.badges += prId to LastSeen.badges(pr, snapshot(repo, prId))
-        list.repaint()
-    }
-
-    private fun snapshot(repo: ResolvedRepo, prId: Int) =
-        LastSeenService.getInstance(project).get(LastSeen.key(repo.remote.org, prId))
 
     fun openSelectedInBrowser() {
         val pr = selectedPullRequest ?: return

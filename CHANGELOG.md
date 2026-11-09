@@ -7,6 +7,9 @@
 - Create PR: the title includes the Jira summary (`ABC-123 Add login form`) when Jira is signed in.
 - Start Jira Ticket: if the empty commit or the push fails, the new branch is removed and you're back on your previous branch, so a retry starts clean. If the PR can't be created after the push, the branch is kept and you're told to create the PR with +.
 - Create PR: choosing "Don't Push" for a branch whose remote is behind now says the PR shows the older remote commits.
+- Comments: a background check that finishes after you post, reply or resolve no longer briefly shows the threads as they were before.
+- The list's "New activity" check now updates open PR views too, and shows @mentions as names like everywhere else.
+- "Show" on a notification and Start Ticket's PR selection now work even when the tool window wasn't open yet: the PR is selected once the list appears.
 - Builds against WebStorm 2026.3, where VCS and JNA moved into bundled plugins. 2026.2 is no longer supported.
 
 ## 0.2.0

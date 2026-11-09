@@ -1,5 +1,7 @@
 package se.personal.adoprreview.diff
 
+import se.personal.adoprreview.conversation.PrRef
+import se.personal.adoprreview.conversation.Anchors
 import com.intellij.diff.DiffContext
 import com.intellij.diff.DiffExtension
 import com.intellij.diff.FrameDiffTool
@@ -79,11 +81,12 @@ private class ThreadInlays(
     fun start() {
         layout.onRediff { rediffs.value++ }
         val service = PrReviewService.getInstance(project)
+        val conversations = service.conversations
         val job = service.scope.launch(Dispatchers.EDT) {
-            if (service.threads(prId).value == null) {
+            if (conversations.threads(prId).value == null) {
                 launch {
                     try {
-                        service.reloadThreads(pr.repo.remote, prId)
+                        conversations.ensureLoaded(PrRef(pr.repo.remote, prId))
                     } catch (e: CancellationException) {
                         throw e
                     } catch (_: Exception) {
@@ -92,7 +95,7 @@ private class ThreadInlays(
                 }
             }
             // Re-render on new threads, after a rediff, and when "Show" asks for one of this file's threads.
-            combine(service.threads(prId), service.reveals, rediffs) { threads, reveal, rediff ->
+            combine(conversations.threads(prId), conversations.reveals, rediffs) { threads, reveal, rediff ->
                 val mine = threads.orEmpty().filter { it.filePath == path }
                 Triple(mine, reveal?.takeIf { (pr, thread) -> pr == prId && mine.any { it.id == thread } }, rediff)
             }.distinctUntilChanged().collect { (threads, _, _) -> render(threads) }
@@ -106,16 +109,11 @@ private class ThreadInlays(
         if (!layout.isReady) return
         val parent = Disposer.newDisposable(lifetime, "ADO PR threads")
         inlays = parent
-        val reveal = PrReviewService.getInstance(project).takeReveal(prId, threads.map { it.id })
+        val reveal = PrReviewService.getInstance(project).conversations.takeReveal(prId, threads.map { it.id })
         reveal?.let { states.getOrPut(it, ::ThreadUiState).expanded = true }
         for (thread in threads) {
-            val context = thread.threadContext ?: continue
-            val (side, position) = when {
-                context.rightFileStart != null -> Side.RIGHT to (context.rightFileEnd ?: context.rightFileStart)
-                context.leftFileStart != null -> Side.LEFT to (context.leftFileEnd ?: context.leftFileStart)
-                else -> continue
-            }
-            val (editor, line) = layout.toEditor(side, position.line - 1) ?: continue
+            val (side, prLine) = Anchors.position(thread) ?: continue
+            val (editor, line) = layout.toEditor(side, prLine) ?: continue
             val panel = ThreadPanel(project, pr.repo.remote, prId, thread, pr.details.myId, states.getOrPut(thread.id, ::ThreadUiState))
             ThreadInlay.add(editor, line + 1, panel, parent)
             if (thread.id == reveal) {
