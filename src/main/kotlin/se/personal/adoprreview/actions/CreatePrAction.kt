@@ -15,6 +15,8 @@ import kotlinx.coroutines.withContext
 import se.personal.adoprreview.AdoNotifications
 import se.personal.adoprreview.api.AdoClient
 import se.personal.adoprreview.api.dto.NewPullRequest
+import se.personal.adoprreview.jira.JiraClient
+import se.personal.adoprreview.jira.JiraSignIn
 import se.personal.adoprreview.repo.GitOps
 import se.personal.adoprreview.repo.ResolvedRepo
 import se.personal.adoprreview.state.AdoSettings
@@ -70,6 +72,7 @@ class CreatePrAction(private val panel: PrListPanel) :
             client.repository(remote).defaultBranch?.removePrefix("refs/heads/") to
                 withContext(Dispatchers.IO) { GitOps.lastCommitSubject(project, repo) }
         }
+        val summary = ticketSummary(project, remote.org, branch)
         val settings = AdoSettings.getInstance()
         val repoKey = "${remote.org}/${remote.project}/${remote.repo}".lowercase()
         val targets = targetBranches(repo, branch, defaultBranch)
@@ -79,7 +82,7 @@ class CreatePrAction(private val panel: PrListPanel) :
             targetBranches = targets,
             defaultBranch = defaultBranch,
             defaultTarget = settings.lastTarget(repoKey)?.takeIf { it in targets } ?: defaultBranch,
-            title = PrTemplates.title(branch, lastCommit),
+            title = PrTemplates.title(branch, lastCommit, summary),
             jiraSite = settings.jiraSite(remote.org),
             draft = settings.createAsDraft,
         )
@@ -103,6 +106,15 @@ class CreatePrAction(private val panel: PrListPanel) :
         }
         AdoNotifications.info(project, "Pull request created", "#${created.pullRequestId} ${created.title}", remote.webUrl(created.pullRequestId))
         panel.refreshAndSelect(created.pullRequestId)
+    }
+
+    /** The Jira summary of the branch's ticket, when the branch has a key and a Jira login is saved; never prompts. */
+    private suspend fun ticketSummary(project: Project, org: String, branch: String): String? {
+        val key = PrTemplates.ticketKey(branch) ?: return null
+        val (site, login) = JiraSignIn.saved(org) ?: return null
+        return runCatching {
+            withBackgroundProgress(project, "Reading $key from Jira") { JiraClient.getInstance().issue(site, login, key).summary }
+        }.getOrNull()?.takeIf { it.isNotBlank() }
     }
 
     /** Returns false if the user cancelled. ADO needs the branch on the remote, so an unpushed branch must be pushed. */
@@ -138,18 +150,20 @@ class CreatePrAction(private val panel: PrListPanel) :
         return true
     }
 
-    /** Branches on the PR's remote, with the default branch and develop/main-like branches first. */
-    private fun targetBranches(repo: ResolvedRepo, source: String, defaultBranch: String?): List<String> {
-        val names = repo.gitRepository.branches.remoteBranches
-            .filter { it.remote == repo.gitRemote }
-            .map { it.nameForRemoteOperations }
-            .filter { it != "HEAD" && it != source }
-            .distinct()
-        fun rank(name: String) = when {
-            name == defaultBranch -> 0
-            name.startsWith("develop") || name == "main" || name == "master" -> 1
-            else -> 2
+    companion object {
+        /** Branches on the PR's remote, with the default branch and develop/main-like branches first. */
+        fun targetBranches(repo: ResolvedRepo, source: String?, defaultBranch: String?): List<String> {
+            val names = repo.gitRepository.branches.remoteBranches
+                .filter { it.remote == repo.gitRemote }
+                .map { it.nameForRemoteOperations }
+                .filter { it != "HEAD" && it != source }
+                .distinct()
+            fun rank(name: String) = when {
+                name == defaultBranch -> 0
+                name.startsWith("develop") || name == "main" || name == "master" -> 1
+                else -> 2
+            }
+            return names.sortedWith(compareBy(::rank, { it }))
         }
-        return names.sortedWith(compareBy(::rank, { it }))
     }
 }

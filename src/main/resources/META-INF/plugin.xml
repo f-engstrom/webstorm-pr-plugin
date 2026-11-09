@@ -3,11 +3,13 @@
     <name>Azure DevOps PR Review</name>
     <vendor>Personal</vendor>
     <description><![CDATA[
-        Review Azure DevOps (dev.azure.com) pull requests inside WebStorm. Authenticates with the Azure CLI.
+        Review Azure DevOps (dev.azure.com) pull requests inside WebStorm, and start Jira tickets as branches with draft PRs. Authenticates with the Azure CLI and a Jira API token.
     ]]></description>
 
     <depends>com.intellij.modules.platform</depends>
     <depends>Git4Idea</depends>
+    <depends>com.intellij.platform.vcs</depends>
+    <depends>com.intellij.modules.jna</depends>
 
     <extensions defaultExtensionNs="com.intellij">
         <toolWindow id="ADO PRs" anchor="left" icon="AllIcons.Vcs.Merge"
@@ -20,6 +22,9 @@
     </extensions>
 
     <actions>
+        <action id="AdoPrReview.StartTicket" class="se.personal.adoprreview.actions.StartTicketAction"
+                text="Start Jira Ticket…" description="Create a branch and a draft pull request for a Jira ticket"
+                icon="AllIcons.Vcs.Branch"/>
         <action id="AdoPrReview.CommentOnSelection" class="se.personal.adoprreview.actions.CommentOnSelectionAction"
                 text="Add PR Comment" description="Comment on the selected lines of this pull request diff"
                 icon="AllIcons.General.Add">

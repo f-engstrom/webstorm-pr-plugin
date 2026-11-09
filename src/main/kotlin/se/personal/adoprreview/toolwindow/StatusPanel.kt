@@ -19,7 +19,10 @@ import com.intellij.ui.ColorUtil
 import com.intellij.ui.JBColor
 import com.intellij.ui.ScrollPaneFactory
 import com.intellij.util.ui.JBUI
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import se.personal.adoprreview.jira.JiraAuth
+import se.personal.adoprreview.jira.JiraClient
 import se.personal.adoprreview.api.AdoClient
 import se.personal.adoprreview.auth.AzCliToken
 import se.personal.adoprreview.repo.AdoRepoResolver
@@ -53,6 +56,9 @@ class StatusPanel(private val project: Project, parentDisposable: Disposable) : 
     }
     private var lastHtml = ""
 
+    /** Saved Jira email per site; read from PasswordSafe off the EDT, since the Keychain can be slow. */
+    private val jiraLoginCache = java.util.concurrent.ConcurrentHashMap<String, String>()
+
     init {
         val actions = DefaultActionGroup(
             action("Poll Now", "Check for PR activity right away", AllIcons.Actions.Refresh) {
@@ -66,6 +72,14 @@ class StatusPanel(private val project: Project, parentDisposable: Disposable) : 
                     AdoRepoResolver.getInstance(project).resolve()?.let { runCatching { AzCliToken.getInstance().authHeader(it.remote.org) } }
                 }
             },
+            action("Reset Jira Token", "Forget the saved Jira token for this org's site; Start Jira Ticket asks again", AllIcons.Actions.GC) {
+                val repo = AdoRepoResolver.getInstance(project).resolve() ?: return@action
+                val site = AdoSettings.getInstance().jiraSite(repo.remote.org) ?: return@action
+                PrReviewService.getInstance(project).scope.launch(Dispatchers.IO) {
+                    JiraAuth.clear(site)
+                    jiraLoginCache.remove(site)
+                }
+            },
             action("Copy Diagnostics", "Copy this page as text", AllIcons.Actions.Copy) {
                 CopyPasteManager.getInstance().setContents(StringSelection(asText(collect())))
             },
@@ -75,10 +89,29 @@ class StatusPanel(private val project: Project, parentDisposable: Disposable) : 
         setToolbar(toolbar.component)
         setContent(ScrollPaneFactory.createScrollPane(pane, true))
 
-        val timer = Timer(1000) { if (isShowing) update() }
+        val timer = Timer(1000) {
+            if (isShowing) {
+                refreshJiraLogin()
+                update()
+            }
+        }
         timer.start()
         Disposer.register(parentDisposable) { timer.stop() }
         update()
+    }
+
+    private var jiraLoginCheckedAt = 0L
+
+    private fun refreshJiraLogin() {
+        val now = System.currentTimeMillis()
+        if (now - jiraLoginCheckedAt < 10_000) return
+        jiraLoginCheckedAt = now
+        val repo = AdoRepoResolver.getInstance(project).resolve() ?: return
+        val site = AdoSettings.getInstance().jiraSite(repo.remote.org) ?: return
+        PrReviewService.getInstance(project).scope.launch(Dispatchers.IO) {
+            val email = JiraAuth.get(site)?.email
+            if (email == null) jiraLoginCache.remove(site) else jiraLoginCache[site] = email
+        }
     }
 
     private fun update() {
@@ -110,6 +143,19 @@ class StatusPanel(private val project: Project, parentDisposable: Disposable) : 
                 ))
             }
             add(token.lastError?.let { (at, message) -> Row("Last az error", "${ago(at)}: $message", Level.ERROR) } ?: Row("Last az error", "none", Level.OK))
+        }
+
+        val jira = buildList {
+            val jiraClient = JiraClient.getInstance()
+            val site = repo?.let { AdoSettings.getInstance().jiraSite(it.remote.org) }
+            add(site?.let { Row("Site", it, Level.OK) } ?: Row("Site", "not set (Start Jira Ticket asks for it)", Level.WARN))
+            if (site != null) {
+                val email = jiraLoginCache[site]
+                add(if (email == null) Row("Token", "none saved", Level.WARN) else Row("Token", "saved for $email", Level.OK))
+                val identity = jiraClient.lastIdentity?.takeIf { it.first == site }?.second
+                add(Row("Signed in as", identity?.let { "${it.displayName ?: "?"} (${it.accountId})" } ?: "not checked this session"))
+            }
+            add(jiraClient.lastError?.let { (at, message) -> Row("Last Jira error", "${ago(at)}: $message", Level.ERROR) } ?: Row("Last Jira error", "none", Level.OK))
         }
 
         val identity = service.knownIdentities().map { (org, id) -> Row(org, id, Level.OK) }
@@ -168,7 +214,7 @@ class StatusPanel(private val project: Project, parentDisposable: Disposable) : 
         )
 
         return listOf(
-            Section("Auth", auth), Section("Identity", identity), Section("Repository", repository),
+            Section("Auth", auth), Section("Identity", identity), Section("Jira", jira), Section("Repository", repository),
             Section("Polling", polling), Section("Network", network), Section("Caches", caches), Section("Build", build),
         )
     }
@@ -196,7 +242,7 @@ class StatusPanel(private val project: Project, parentDisposable: Disposable) : 
         "## ${section.title}\n" + section.rows.joinToString("\n") { "${it.label}: ${it.value}" }
     }
 
-    private fun action(text: String, description: String, icon: Icon, perform: () -> Unit) =
+    private fun action(text: String, description: String, icon: Icon, perform: () -> Unit): DumbAwareAction =
         object : DumbAwareAction(text, description, icon) {
             override fun getActionUpdateThread() = ActionUpdateThread.BGT
             override fun actionPerformed(e: AnActionEvent) = perform()

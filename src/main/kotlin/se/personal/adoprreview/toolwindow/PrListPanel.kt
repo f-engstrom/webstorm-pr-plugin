@@ -71,7 +71,10 @@ class PrListPanel(private val project: Project, parentDisposable: Disposable) : 
             }
         }.installOn(list)
 
-        val actions = DefaultActionGroup(RefreshAction(this), FilterActionGroup(this), OpenInBrowserAction(this), CreatePrAction(this))
+        val actions = DefaultActionGroup(
+            RefreshAction(this), FilterActionGroup(this), OpenInBrowserAction(this), CreatePrAction(this),
+            ActionManager.getInstance().getAction("AdoPrReview.StartTicket"),
+        )
         val toolbar = ActionManager.getInstance().createActionToolbar("AdoPrList", actions, true)
         toolbar.targetComponent = this
         setToolbar(toolbar.component)

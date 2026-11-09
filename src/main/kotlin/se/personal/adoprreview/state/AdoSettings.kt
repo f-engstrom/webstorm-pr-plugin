@@ -23,6 +23,10 @@ class AdoSettings : SimplePersistentStateComponent<AdoSettings.SettingsState>(Se
 
         var createAsDraft by property(false)
 
+        /** Start Jira Ticket checkboxes. */
+        var startAssignToMe by property(true)
+        var startMoveToInProgress by property(true)
+
         var backgroundNotifications by property(true)
 
         var allFilesSettingsInitialized by property(false)
@@ -55,6 +59,18 @@ class AdoSettings : SimplePersistentStateComponent<AdoSettings.SettingsState>(Se
         get() = state.createAsDraft
         set(value) {
             state.createAsDraft = value
+        }
+
+    var startAssignToMe: Boolean
+        get() = state.startAssignToMe
+        set(value) {
+            state.startAssignToMe = value
+        }
+
+    var startMoveToInProgress: Boolean
+        get() = state.startMoveToInProgress
+        set(value) {
+            state.startMoveToInProgress = value
         }
 
     var allFilesSettingsInitialized: Boolean
