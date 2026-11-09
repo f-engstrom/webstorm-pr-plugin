@@ -154,6 +154,12 @@ class StatusPanel(private val project: Project, parentDisposable: Disposable) : 
                 add(if (email == null) Row("Token", "none saved", Level.WARN) else Row("Token", "saved for $email", Level.OK))
                 val identity = jiraClient.lastIdentity?.takeIf { it.first == site }?.second
                 add(Row("Signed in as", identity?.let { "${it.displayName ?: "?"} (${it.accountId})" } ?: "not checked this session"))
+                val api = jiraClient.apiBaseOf(site)
+                add(Row("API", when {
+                    api == null -> "not used this session"
+                    api.startsWith("https://api.atlassian.com/") -> "Atlassian API gateway ($api), scoped tokens work"
+                    else -> "the site itself (classic token, or the site has no cloud ID)"
+                }))
             }
             add(jiraClient.lastError?.let { (at, message) -> Row("Last Jira error", "${ago(at)}: $message", Level.ERROR) } ?: Row("Last Jira error", "none", Level.OK))
         }

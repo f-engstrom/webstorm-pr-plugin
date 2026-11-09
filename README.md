@@ -107,7 +107,7 @@ AZURE_CONFIG_DIR=~/.azure-<org> az login --allow-no-subscriptions
 
 If `~/.azure-<org>` exists (org in lower case, as in the remote URL), the plugin uses it for that org. Every other org uses `~/.azure`. The **Status** tab shows which login each org uses and the signed-in account.
 
-**Jira** (only for Start Jira Ticket and the PR title summary): the first **Start Jira Ticket** asks for the Jira site, your Atlassian email and an [API token](https://id.atlassian.com/manage-profile/security/api-tokens). It is checked with `GET /rest/api/3/myself` and kept in the IDE PasswordSafe (the macOS Keychain), per site. The site is remembered per Azure DevOps org. **Reset Jira Token** in the Status tab forgets it.
+**Jira** (only for Start Jira Ticket and the PR title summary): the first **Start Jira Ticket** asks for the Jira site, your Atlassian email and an [API token](https://id.atlassian.com/manage-profile/security/api-tokens). Use a token with scopes (granular scopes are listed in the in-IDE Help under *Starting a Jira ticket*; classic: `read:jira-user`, `read:jira-work`, `write:jira-work`). Requests go through the Atlassian API gateway (`api.atlassian.com/ex/jira/{cloudId}`, cloud ID from the site's `/_edge/tenant_info`), as scoped tokens require, falling back to the site itself for a classic token the gateway rejects. It is checked with `GET /rest/api/3/myself` and kept in the IDE PasswordSafe (the macOS Keychain), per site. The site is remembered per Azure DevOps org. **Reset Jira Token** in the Status tab forgets it.
 
 ---
 

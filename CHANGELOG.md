@@ -10,6 +10,7 @@
 - Comments: a background check that finishes after you post, reply or resolve no longer briefly shows the threads as they were before.
 - The list's "New activity" check now updates open PR views too, and shows @mentions as names like everywhere else.
 - "Show" on a notification and Start Ticket's PR selection now work even when the tool window wasn't open yet: the PR is selected once the list appears.
+- Jira: scoped API tokens (granular or classic scopes) work. Requests go through the Atlassian API gateway, using the site's cloud ID, which scoped tokens require; a classic token without scopes still falls back to the site. Help lists the scopes, and the Status tab shows which way the site is called.
 - Builds against WebStorm 2026.3, where VCS and JNA moved into bundled plugins. 2026.2 is no longer supported.
 
 ## 0.2.0

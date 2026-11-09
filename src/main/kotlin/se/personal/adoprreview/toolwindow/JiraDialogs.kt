@@ -59,7 +59,8 @@ class JiraLoginDialog(project: Project, site: String?, email: String?, private v
         row("Email:") { cell(emailField).align(AlignX.FILL) }
         row("API token:") {
             cell(tokenField).align(AlignX.FILL)
-                .comment("Create one at <a href='https://id.atlassian.com/manage-profile/security/api-tokens'>id.atlassian.com → Security → API tokens</a>. Stored in the macOS Keychain.")
+                .comment("Create one with scopes at <a href='https://id.atlassian.com/manage-profile/security/api-tokens'>id.atlassian.com → Security → API tokens</a>; " +
+                    "the scopes to pick are in the Help tab under Starting a Jira ticket. Stored in the macOS Keychain.")
         }
     }.apply { preferredSize = JBUI.size(520, preferredSize.height) }
 

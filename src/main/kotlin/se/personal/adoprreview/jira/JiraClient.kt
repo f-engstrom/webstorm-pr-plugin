@@ -7,6 +7,7 @@ import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import se.personal.adoprreview.api.HttpCall
+import se.personal.adoprreview.api.HttpReply
 import se.personal.adoprreview.api.HttpTransport
 import se.personal.adoprreview.api.JavaHttpTransport
 import java.io.IOException
@@ -16,6 +17,7 @@ import java.nio.charset.StandardCharsets.UTF_8
 import java.time.Duration
 import java.time.Instant
 import java.util.Base64
+import java.util.concurrent.ConcurrentHashMap
 
 class JiraException(message: String, val status: Int? = null) : Exception(message) {
     val isAuthError: Boolean get() = status == 401 || status == 403
@@ -67,6 +69,19 @@ class JiraClient(private val transport: HttpTransport) {
     private suspend inline fun <reified T> get(site: String, login: JiraAuth.Login, path: String): T =
         json.decodeFromString(send(site, login, path))
 
+    /**
+     * Where API calls for a site go, once known: the Atlassian API gateway (`api.atlassian.com/ex/jira/{cloudId}`),
+     * which scoped API tokens require, or the site itself, for classic tokens the gateway turns away.
+     */
+    private val apiBases = ConcurrentHashMap<String, String>()
+
+    /** Which API base [site] uses, for the Status tab; null until the first request. */
+    fun apiBaseOf(site: String): String? = apiBases[JiraAuth.normalize(site)]
+
+    /**
+     * Sends [path] for [site]. The first request per site looks up its cloud ID and tries the gateway; if the gateway
+     * rejects the token (401), the same request goes to the site, and whichever answered is used from then on.
+     */
     private suspend fun send(
         site: String,
         login: JiraAuth.Login,
@@ -75,22 +90,58 @@ class JiraClient(private val transport: HttpTransport) {
         /** JSON. */
         body: String? = null,
     ): String {
-        val base = JiraAuth.normalize(site)
+        val siteBase = JiraAuth.normalize(site)
+        apiBases[siteBase]?.let { return result(exchange(it, login, path, method, body)) }
+
+        val gateway = cloudId(siteBase)?.let { "$GATEWAY/$it" }
+        if (gateway == null) {
+            val reply = exchange(siteBase, login, path, method, body)
+            if (reply.status != 401) apiBases[siteBase] = siteBase
+            return result(reply)
+        }
+        val reply = exchange(gateway, login, path, method, body)
+        if (reply.status != 401) {
+            apiBases[siteBase] = gateway
+            return result(reply)
+        }
+        // A classic (unscoped) token may only work on the site itself.
+        val direct = exchange(siteBase, login, path, method, body)
+        if (direct.status != 401) {
+            apiBases[siteBase] = siteBase
+            return result(direct)
+        }
+        return result(reply)
+    }
+
+    /** The site's cloud ID from its public `/_edge/tenant_info`, or null if it doesn't say (e.g. not Jira Cloud). */
+    private suspend fun cloudId(siteBase: String): String? {
+        val reply = call(siteBase, HttpCall("GET", "$siteBase/_edge/tenant_info", mapOf("Accept" to "application/json"), timeout = TIMEOUT))
+        if (reply.status !in 200..299) return null
+        return runCatching { json.parseToJsonElement(reply.text).jsonObject["cloudId"]?.jsonPrimitive?.content }
+            .getOrNull()?.takeIf { it.isNotBlank() }
+    }
+
+    private suspend fun exchange(base: String, login: JiraAuth.Login, path: String, method: String, body: String?): HttpReply {
         val auth = Base64.getEncoder().encodeToString("${login.email}:${login.token}".toByteArray(UTF_8))
         val headers = buildMap {
             put("Authorization", "Basic $auth")
             put("Accept", "application/json")
             if (body != null) put("Content-Type", "application/json")
         }
-        val reply = try {
-            transport.send(HttpCall(method, base + path, headers, body?.toByteArray(UTF_8), Duration.ofSeconds(30)))
-        } catch (e: IOException) {
-            fail("Couldn't reach $base: ${e.message ?: e.javaClass.simpleName}", null)
-        } catch (e: IllegalArgumentException) {
-            fail("Not a valid Jira site: $base", null)
-        } catch (e: URISyntaxException) {
-            fail("Not a valid Jira site: $base", null)
-        }
+        return call(base, HttpCall(method, base + path, headers, body?.toByteArray(UTF_8), TIMEOUT))
+    }
+
+    private suspend fun call(base: String, call: HttpCall): HttpReply = try {
+        transport.send(call)
+    } catch (e: IOException) {
+        fail("Couldn't reach $base: ${e.message ?: e.javaClass.simpleName}", null)
+    } catch (e: IllegalArgumentException) {
+        fail("Not a valid Jira site: $base", null)
+    } catch (e: URISyntaxException) {
+        fail("Not a valid Jira site: $base", null)
+    }
+
+    private fun result(reply: HttpReply): String {
         if (reply.status in 200..299) return reply.text
         fail(errorMessage(reply.status, reply.text), reply.status)
     }
@@ -103,12 +154,15 @@ class JiraClient(private val transport: HttpTransport) {
     private fun errorMessage(status: Int, body: String): String {
         val detail = runCatching {
             val obj = json.parseToJsonElement(body).jsonObject
+            // Jira's own errors, or the gateway's `{"code": 401, "message": "Unauthorized; scope does not match"}`.
             (obj["errorMessages"]?.jsonArray?.map { it.jsonPrimitive.content }.orEmpty() +
-                obj["errors"]?.jsonObject?.values?.map { it.jsonPrimitive.content }.orEmpty())
+                obj["errors"]?.jsonObject?.values?.map { it.jsonPrimitive.content }.orEmpty() +
+                listOfNotNull(obj["message"]?.jsonPrimitive?.content))
                 .joinToString("; ").takeIf { it.isNotBlank() }
         }.getOrNull()
         return when (status) {
-            401 -> "Jira rejected the email or API token (HTTP 401)."
+            401 -> "Jira rejected the email or API token (HTTP 401${detail?.let { ": $it" }.orEmpty()}). " +
+                "A scoped token needs every scope listed in Help → Starting a Jira ticket."
             in 300..399 -> "Jira redirected the request (HTTP $status). Check the site URL."
             else -> "${detail ?: "Jira request failed"} (HTTP $status)"
         }
@@ -116,6 +170,8 @@ class JiraClient(private val transport: HttpTransport) {
 
     companion object {
         private val FIELDS = listOf("summary", "issuetype", "status", "assignee")
+        private const val GATEWAY = "https://api.atlassian.com/ex/jira"
+        private val TIMEOUT: Duration = Duration.ofSeconds(30)
 
         private val json = Json {
             ignoreUnknownKeys = true

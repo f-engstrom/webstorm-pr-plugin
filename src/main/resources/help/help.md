@@ -78,6 +78,14 @@ Click the branch icon in the Pull Requests toolbar, or use *Find Action* → **S
 
 **The first time**, you're asked for the Jira site (for example `https://your-company.atlassian.net`), your Atlassian email and an API token from [id.atlassian.com → Security → API tokens](https://id.atlassian.com/manage-profile/security/api-tokens). The token is checked with Jira and kept in the macOS Keychain. The site is remembered for this Azure DevOps org.
 
+**Use a scoped token** (*Create API token with scopes*, app **Jira**). Pick these granular scopes:
+
+`read:user:jira`, `read:application-role:jira`, `read:group:jira`, `read:avatar:jira`, `read:issue-details:jira`, `read:field:jira`, `read:field.default-value:jira`, `read:field.option:jira`, `read:issue:jira`, `read:issue-meta:jira`, `read:issue-security-level:jira`, `read:issue.vote:jira`, `read:issue.changelog:jira`, `read:status:jira`, `read:field-configuration:jira`, `read:issue.transition:jira`, `write:issue:jira`, `write:issue.property:jira`
+
+The `write:` scopes are only for assigning the ticket and moving it to In Progress. Without them, untick those two boxes in the dialog. The branch and PR are created either way. Classic scopes work too: `read:jira-user`, `read:jira-work` and `write:jira-work`. Scopes can't be changed after a token is created; make a new one and use **Reset Jira Token** in the Status tab.
+
+A scoped token only works through Atlassian's API gateway (`api.atlassian.com/ex/jira/<cloud ID>`). The plugin looks up the site's cloud ID by itself, so still enter the normal site address. An older token without scopes is sent to the site directly if the gateway turns it away. The **Status** tab shows which way a site is called.
+
 **Before the dialog opens:**
 
 - If you have uncommitted changes to tracked files, it stops. Commit or shelve them first.
@@ -221,7 +229,7 @@ Tokens are never shown. The account name is read from the token in memory.
 - **List filter:** IDE settings (`adoPrReview.xml`).
 - **Seen state and Viewed marks:** this project's workspace file (`.idea/workspace.xml`), so it isn't shared through Git.
 - **Activity notifications:** what was last seen is kept in memory only, so restarting the IDE starts from a fresh baseline.
-- **Network calls:** only `dev.azure.com`, plus `vssps.dev.azure.com` to look up names for @mentions, plus your Jira site once you've signed in to Jira.
+- **Network calls:** only `dev.azure.com`, plus `vssps.dev.azure.com` to look up names for @mentions, plus, once you've signed in to Jira, your Jira site and `api.atlassian.com` (the gateway scoped tokens need).
 
 ## Troubleshooting
 

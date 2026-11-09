@@ -27,3 +27,5 @@
 **Active repo** (`AdoRepoResolver`): the project's first Git repository with a dev.azure.com remote, preferring `origin`. Cached; cleared when repositories or remotes change.
 
 **User operation** (`PrReviewService.launchOperation`): something the user started (a click or an action). It runs on the EDT; a failure becomes an error notification. Cancellation is never reported.
+
+**Jira site / API base**: the *site* is what the user enters (`https://acme.atlassian.net`) and is used for ticket links. The *API base* is where REST calls go: the Atlassian API gateway `https://api.atlassian.com/ex/jira/{cloudId}`, which scoped tokens require, or the site itself for a classic token the gateway rejects. The choice is made on the first request and remembered per site for the session.
