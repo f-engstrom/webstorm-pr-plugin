@@ -64,13 +64,41 @@ Click **+** in the Pull Requests toolbar to create a PR from the current branch.
 
 **Defaults in the dialog:**
 
-- **Title:** the ticket key from the branch name, so `feature/ABC-123` gives `ABC-123 `. Type the summary after it, or leave it as it is. Branches without a key use the last commit message. An empty title falls back to the branch name.
+- **Title:** the ticket key from the branch name plus the Jira summary, so `feature/ABC-123` gives `ABC-123 Add login form` once you've signed in to Jira through **Start Jira Ticket**. Without a Jira login it's just `ABC-123 `; type the summary after it, or leave it as it is. Branches without a key use the last commit message. An empty title falls back to the branch name.
 - **Description:** a link to the ticket, for example `[ABC-123](https://your-company.atlassian.net/browse/ABC-123)`.
 - **Jira site:** used for that link. Enter it once per Azure DevOps org; it's remembered.
 - **Target branch:** the one you used last for this repo, or else the repo's default branch. Press ↓ or the button beside the field for a list grouped by folder (`feature/…`) and numbered families (`dev01`, `dev02`…); type to filter it.
 - **Draft:** the choice you made last time.
 
 After it's created, the new PR is selected. The list switches to *Created by me* if needed.
+
+## Starting a Jira ticket
+
+Click the branch icon in the Pull Requests toolbar, or use *Find Action* → **Start Jira Ticket**, to go from a ticket to a branch and a draft PR in one step.
+
+**The first time**, you're asked for the Jira site (for example `https://your-company.atlassian.net`), your Atlassian email and an API token from [id.atlassian.com → Security → API tokens](https://id.atlassian.com/manage-profile/security/api-tokens). The token is checked with Jira and kept in the macOS Keychain. The site is remembered for this Azure DevOps org.
+
+**Before the dialog opens:**
+
+- If you have uncommitted changes to tracked files, it stops. Commit or shelve them first.
+- The remote is fetched, so the branch list and the starting point are current.
+
+**In the dialog:**
+
+- **Tickets:** your unresolved tickets, most recently updated first. Type to filter by key or summary words, and use ↑/↓ to pick. Type any key, such as `ABC-123`, to use a ticket that isn't yours.
+- **Prefix:** `bugfix/` for bugs, otherwise `feature/`. You can pick or type another one.
+- **Branch:** the name that will be created, such as `feature/ABC-123`.
+- **From and into:** the branch to start from, which is also the draft PR's target. It defaults to the one you used last for this repo.
+- **Assign to me** and **Move to In Progress:** remembered between uses.
+
+**When you click Start:**
+
+1. The branch is created from the latest remote commit of the chosen branch.
+2. An empty commit `ABC-123 <summary>` is added, so the PR has a commit. Your commit hooks still run.
+3. The branch is pushed and a **draft** PR is opened, titled `ABC-123 <summary>` with a link to the ticket. No reviewers are added.
+4. The ticket is assigned to you and moved to the first *In Progress* status Jira offers. If that fails, the branch and PR are kept and a warning says what didn't happen.
+
+If the ticket already has a branch (any local or remote branch with its key), you're offered to check that one out instead, and its PR is selected if there is one.
 
 ## Activity notifications
 
@@ -172,6 +200,7 @@ The **Status** tab shows what the plugin is doing and what it depends on, update
 
 - **Auth:** where `az` is, which login each org uses, the signed-in account and when its token expires, and the last `az` error.
 - **Identity, Repository:** your Azure DevOps user ID, and the remote and branch in use.
+- **Jira:** the Jira site for this org, whether a token is saved and for which email, who it signed in as, and the last Jira error.
 - **Polling:** whether checks are on, running, waiting (with a countdown) or paused because the computer is idle, plus the last check's result.
 - **Network:** request counts and the last failed request.
 - **Caches and Build:** cache sizes, the plugin version and the IDE build.
@@ -180,17 +209,19 @@ The **Status** tab shows what the plugin is doing and what it depends on, update
 
 - **Poll Now:** checks for activity right away.
 - **Refresh Token:** asks `az` for a new token, for example after `az login` as another account.
+- **Reset Jira Token:** forgets the saved Jira token for this org's site. The next **Start Jira Ticket** asks again.
 - **Copy Diagnostics:** copies the page as text.
 
 Tokens are never shown. The account name is read from the token in memory.
 
 ## What is stored where
 
-- **Tokens:** memory only, never written to disk.
+- **Azure tokens:** memory only, never written to disk.
+- **Jira email and API token:** the IDE's password store (the macOS Keychain), per Jira site.
 - **List filter:** IDE settings (`adoPrReview.xml`).
 - **Seen state and Viewed marks:** this project's workspace file (`.idea/workspace.xml`), so it isn't shared through Git.
 - **Activity notifications:** what was last seen is kept in memory only, so restarting the IDE starts from a fresh baseline.
-- **Network calls:** only `dev.azure.com`, plus `vssps.dev.azure.com` to look up names for @mentions.
+- **Network calls:** only `dev.azure.com`, plus `vssps.dev.azure.com` to look up names for @mentions, plus your Jira site once you've signed in to Jira.
 
 ## Troubleshooting
 

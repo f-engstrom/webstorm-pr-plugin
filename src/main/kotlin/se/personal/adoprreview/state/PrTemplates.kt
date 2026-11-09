@@ -8,9 +8,13 @@ object PrTemplates {
     fun ticketKey(branch: String): String? = TICKET.find(branch.substringAfterLast('/'))?.groupValues?.get(1)?.uppercase()
         ?: TICKET.find(branch)?.groupValues?.get(1)?.uppercase()
 
-    /** `ABC-123 ` (the summary is typed by the user), or the last commit subject when the branch has no key. */
-    fun title(branch: String, lastCommitSubject: String?): String =
-        ticketKey(branch)?.let { "$it " } ?: lastCommitSubject.orEmpty()
+    /**
+     * `ABC-123 <summary>` when the Jira summary is known, `ABC-123 ` (the summary is typed by the user) when not, or
+     * the last commit subject when the branch has no key.
+     */
+    fun title(branch: String, lastCommitSubject: String?, ticketSummary: String? = null): String =
+        ticketKey(branch)?.let { key -> ticketSummary?.trim()?.takeIf { it.isNotEmpty() }?.let { "$key $it" } ?: "$key " }
+            ?: lastCommitSubject.orEmpty()
 
     /** A Markdown link to the ticket, or empty when there is no key or no Jira site. */
     fun description(branch: String, jiraSite: String?): String {

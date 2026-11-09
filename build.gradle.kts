@@ -15,6 +15,10 @@ dependencies {
         // Build and run against the locally installed WebStorm instead of downloading one.
         local(providers.gradleProperty("platformLocalPath").get())
         bundledPlugin("Git4Idea")
+        // Since 2026.3 the VCS core and JNA are bundled plugins rather than part of the platform classpath.
+        bundledPlugin("com.intellij.platform.vcs")
+        bundledPlugin("com.intellij.modules.jna")
+        bundledModule("intellij.platform.vcs.core")
         // Since 2026.x the DVCS base classes (GitRepository supertypes) are a separate platform module.
         bundledModule("intellij.platform.vcs.dvcs")
         bundledModule("intellij.platform.vcs.dvcs.impl")
@@ -27,7 +31,7 @@ intellijPlatform {
 
     pluginConfiguration {
         ideaVersion {
-            sinceBuild = "262"
+            sinceBuild = "263"
             untilBuild = provider { null }
         }
     }

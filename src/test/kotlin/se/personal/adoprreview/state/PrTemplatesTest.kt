@@ -23,6 +23,13 @@ class PrTemplatesTest {
     }
 
     @Test
+    fun `title uses the Jira summary when known`() {
+        assertEquals("ABC-123 Add login form", PrTemplates.title("feature/ABC-123", "wip", " Add login form "))
+        assertEquals("ABC-123 ", PrTemplates.title("feature/ABC-123", "wip", " "))
+        assertEquals("Fix pipeline", PrTemplates.title("azure-pipelines", "Fix pipeline", "ignored"))
+    }
+
+    @Test
     fun `description links the ticket when the Jira site is known`() {
         assertEquals("[ABC-123](https://your-company.atlassian.net/browse/ABC-123)", PrTemplates.description("feature/ABC-123", "https://your-company.atlassian.net/"))
         assertEquals("", PrTemplates.description("feature/ABC-123", null))

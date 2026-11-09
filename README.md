@@ -1,8 +1,8 @@
 # Azure DevOps PR Review for WebStorm
 
-A personal WebStorm plugin for reviewing Azure DevOps (`dev.azure.com`) pull requests without leaving the IDE. It covers listing, diffing, commenting, voting, creating PRs and activity notifications.
+A personal WebStorm plugin for reviewing Azure DevOps (`dev.azure.com`) pull requests without leaving the IDE. It covers listing, diffing, commenting, voting, creating PRs, starting Jira tickets and activity notifications.
 
-It's built for one machine and one IDE: **WebStorm 2026.2** on macOS, authenticating with the **Azure CLI**. It uses internal IntelliJ Platform APIs on purpose, so a WebStorm upgrade may need small fixes.
+It's built for one machine and one IDE: **WebStorm 2026.3** on macOS, authenticating with the **Azure CLI**. It uses internal IntelliJ Platform APIs on purpose, so a WebStorm upgrade may need small fixes.
 
 - **User guide:** the **Help** tab in the tool window ([`src/main/resources/help/help.md`](src/main/resources/help/help.md)).
 - **Design notes and hard-won lessons:** [`PLAN.md`](PLAN.md).
@@ -36,7 +36,8 @@ All of this lives in the **ADO PRs** tool window, which has three tabs: **Pull R
 | **Diff** | The IDE diff, stepped through with F7. Each file loads lazily. Threads appear inline with reply and resolve. Add comments with the gutter **+** or a selection, then **Cmd+Enter**. One tab per PR. |
 | **All Files** | Every changed file in one scrolling view (the platform's combined diff), with unchanged code collapsed. Comments work there too. |
 | **Local file** | When the PR is checked out and a file matches it exactly, the diff shows your real project file, so TypeScript, ESLint and navigation work. A banner appears and commenting is locked if the file drifts from the PR. |
-| **Create PR** | **+** in the list toolbar. Pushes first if needed (checked against the server). The title is the ticket key from the branch (`ABC-123 `, or the branch name if left empty), the description links to the Jira ticket, the target picker groups branches by folder and numbered family and filters as you type, and the last target branch is remembered. |
+| **Create PR** | **+** in the list toolbar. Pushes first if needed (checked against the server). The title is the ticket key from the branch plus its Jira summary when signed in to Jira (`ABC-123 Add login form`, or `ABC-123 `, or the branch name if left empty), the description links to the Jira ticket, the target picker groups branches by folder and numbered family and filters as you type, and the last target branch is remembered. |
+| **Start Jira Ticket** | Branch icon in the list toolbar, or Find Action. Lists your unresolved Jira tickets (type to filter, or type any key). Creates `feature/ABC-123` (`bugfix/` for bugs) from the latest remote commit of the chosen branch, adds an empty commit `ABC-123 <summary>`, pushes, opens a draft PR into that branch, then assigns the ticket to you and moves it to In Progress. Refuses with uncommitted changes; checks out the existing branch if the ticket has one. |
 | **Activity** | Every 5 minutes, checks for review requests, votes, new comments and replies. Shows a dot on the tool window icon, list badges, and an entry in the Notifications tool window. **Show** goes straight to the comment. Pauses when the computer is idle. |
 | **Status** | Live diagnostics: auth and token, identity, repo, polling state, network counts and failures, caches and build. Buttons for **Poll Now**, **Refresh Token** and **Copy Diagnostics**. |
 
@@ -44,7 +45,7 @@ All of this lives in the **ADO PRs** tool window, which has three tabs: **Pull R
 
 ## Requirements
 
-- **WebStorm 2026.2.x** in `/Applications/WebStorm.app`. The build compiles against this installation, and its bundled JBR 25 is the JDK.
+- **WebStorm 2026.3.x** in `/Applications/WebStorm.app`. The build compiles against this installation, and its bundled JBR 25 is the JDK.
 - **Azure CLI:** `brew install azure-cli`.
 - **A Git remote on `dev.azure.com`** in the project you open. HTTPS, SSH and `~/.ssh/config` host aliases all work. See [Repo resolution](#repo-resolution).
 
@@ -105,6 +106,8 @@ AZURE_CONFIG_DIR=~/.azure-<org> az login --allow-no-subscriptions
 ```
 
 If `~/.azure-<org>` exists (org in lower case, as in the remote URL), the plugin uses it for that org. Every other org uses `~/.azure`. The **Status** tab shows which login each org uses and the signed-in account.
+
+**Jira** (only for Start Jira Ticket and the PR title summary): the first **Start Jira Ticket** asks for the Jira site, your Atlassian email and an [API token](https://id.atlassian.com/manage-profile/security/api-tokens). It is checked with `GET /rest/api/3/myself` and kept in the IDE PasswordSafe (the macOS Keychain), per site. The site is remembered per Azure DevOps org. **Reset Jira Token** in the Status tab forgets it.
 
 ---
 
@@ -235,7 +238,11 @@ src/main/kotlin/se/personal/adoprreview/
   api/dto/                   PRs, iterations, changes, threads, request bodies
   repo/AdoRemote.kt          remote URL parsing and ADO URLs
   repo/AdoRepoResolver.kt    picks the project's ADO remote
-  repo/GitOps.kt             ls-remote push check, push, last commit subject
+  repo/GitOps.kt             ls-remote push check, push, fetch, status, checkout, empty commit
+  jira/JiraClient.kt         Jira Cloud REST v3 (search, issue, assign, transitions), Basic auth
+  jira/JiraAuth.kt           email + API token per site in PasswordSafe
+  jira/JiraSignIn.kt         saved login, or the sign-in dialog until Jira accepts it
+  jira/TicketBranches.kt     branch names, prefixes, ticket filter, In Progress transition
   state/PrReviewService.kt   loads PRs, details and update ranges; thread flows; reveal requests
   state/LastSeenService.kt   per-PR snapshots, badges, viewed files
   state/PrWatcher.kt         background polling, notifications, sidebar dot
@@ -249,7 +256,7 @@ src/main/kotlin/se/personal/adoprreview/
   diff/DiffLayout.kt         PR line to editor line, for each viewer type
   diff/ThreadPanel.kt        one thread: comments, reply, resolve
   diff/NewCommentInlay.kt    new comment box, comment target and range
-  actions/                   toolbar, vote, checkout, create/edit PR, All Files, comment on selection
+  actions/                   toolbar, vote, checkout, create/edit PR, start Jira ticket, All Files, comment on selection
 src/main/resources/
   META-INF/plugin.xml        tool window, diff extension, actions, notification groups, startup activity
   help/help.md               user guide shown in the Help tab
@@ -276,13 +283,23 @@ Every call goes to `https://dev.azure.com/{org}/{project}/_apis/git/repositories
 | Vote | `PUT /pullrequests/{id}/reviewers/{me}` |
 | Names for mentions | `GET https://vssps.dev.azure.com/{org}/_apis/identities?identityIds=…` |
 
+Jira Cloud calls (Start Jira Ticket, and the summary in Create PR) go to the saved site, `https://{site}.atlassian.net`:
+
+| Purpose | Call |
+|---|---|
+| Check the token | `GET /rest/api/3/myself` |
+| My open tickets | `POST /rest/api/3/search/jql` with `assignee = currentUser() AND statusCategory != Done ORDER BY updated DESC` |
+| One ticket | `GET /rest/api/3/issue/{key}?fields=summary,issuetype,status,assignee` |
+| Assign | `PUT /rest/api/3/issue/{key}/assignee` |
+| In Progress | `GET`/`POST /rest/api/3/issue/{key}/transitions` (the first transition into the *In Progress* status category, preferring one named "In Progress") |
+
 ---
 
 ## Things to know before changing code
 
 These are recorded in more detail in [`PLAN.md`](PLAN.md).
 
-- **WebStorm 2026.x module split:** Git4Idea's base classes are in separate modules, so the build declares `bundledModule("intellij.platform.vcs.dvcs")` and `…dvcs.impl`.
+- **WebStorm 2026.x module split:** Git4Idea's base classes are in separate modules, so the build declares `bundledModule("intellij.platform.vcs.dvcs")` and `…dvcs.impl`. Since 2026.3 the VCS core (`com.intellij.platform.vcs`, plus the `intellij.platform.vcs.core` module) and JNA (`com.intellij.modules.jna`) are bundled plugins too, declared both in the build and as `<depends>` in `plugin.xml`.
 - **Threading:** coroutines on `Dispatchers.EDT` and `AnAction`s hold the write-intent lock, but plain Swing listeners don't. Wrap editor, inlay or diff work started from a Swing listener in `WriteIntentReadAction.run { }`.
 - **Kotlin and protected Swing fields:** inside a `JTree` subclass, `cellRenderer = …` and `showsRootHandles = …` write protected fields and bypass the UI delegate. Call the setters instead.
 - **All Files view (internal combined-diff API):**

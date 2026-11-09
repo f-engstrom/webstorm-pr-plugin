@@ -180,12 +180,12 @@ Only build these if the user asks for them after using phases 1–4:
 
 ## Testing
 
-- Unit-test remote URL parsing and system-thread filtering. Nothing else needs automated tests.
+- Unit-test remote URL parsing and system-thread filtering, and the branch → PR workflow (`workflow/PrWorkflow`) through its interface with in-memory fakes: its push/rollback/Jira decisions are where bugs hid.
 - Everything else is verified by hand against real PRs with `./gradlew runIde`.
 
 ## Conventions
 
-- Keep it small: no DI frameworks, no abstraction layers, no interfaces with a single implementation.
+- Keep it small: no DI frameworks, no abstraction layers, no interfaces with a single implementation. The workflow ports (`WorkflowGit`, `WorkflowAdo`, `TicketTracker`, `TargetMemory`, `WorkflowUi`) are the exception: each has the IDE adapter and a test fake.
 - Hardcoded English strings are fine.
 - Threading (2026.x): coroutines on `Dispatchers.EDT` and `AnAction`s get the write-intent lock, but plain Swing listeners (mouse, button, component listeners) do not. Wrap any editor, inlay or diff work started from a Swing listener in `WriteIntentReadAction.run { }`.
 - All Files view (platform combined diff, internal API). Lessons from getting it to work:

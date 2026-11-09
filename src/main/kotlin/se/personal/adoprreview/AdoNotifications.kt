@@ -26,6 +26,12 @@ object AdoNotifications {
         notification.notify(project)
     }
 
+    fun warn(project: Project, title: String, content: String) {
+        NotificationGroupManager.getInstance().getNotificationGroup(GROUP)
+            .createNotification(title, content, NotificationType.WARNING)
+            .notify(project)
+    }
+
     fun error(project: Project, title: String, error: Throwable) {
         val content = when (error) {
             is AzCliException, is AdoException -> error.message.orEmpty()
